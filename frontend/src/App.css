@@ -1,0 +1,263 @@
+.app-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  padding: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+  position: relative;
+  z-index: 10;
+}
+
+/* Holographic Header styling */
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 20px;
+  border-bottom: 2px solid var(--border-cyan);
+  margin-bottom: 30px;
+  position: relative;
+}
+
+.app-header::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 30px;
+  height: 2px;
+  background: var(--neon-cyan);
+  box-shadow: 0 0 10px var(--neon-cyan);
+}
+
+.brand-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-title {
+  font-family: 'Orbitron', sans-serif;
+  font-weight: 900;
+  font-size: 1.6rem;
+  letter-spacing: 3px;
+  color: #fff;
+  text-shadow: 0 0 10px rgba(0, 240, 255, 0.4);
+}
+
+.brand-version {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.75rem;
+  color: var(--neon-cyan);
+  border: 1px solid var(--border-cyan);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.system-status {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.8rem;
+  letter-spacing: 1px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--neon-green);
+  box-shadow: 0 0 10px var(--neon-green);
+}
+
+.status-dot.disconnected {
+  background: var(--neon-red);
+  box-shadow: 0 0 10px var(--neon-red);
+  animation: blink 1s ease-in-out infinite alternate;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Layout Grid */
+.app-grid {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 30px;
+  flex: 1;
+}
+
+.main-column {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 480px;
+}
+
+.sidebar-column {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Control Matrix Widget Panel */
+.widget-panel {
+  padding: 20px;
+}
+
+.widget-title {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  margin-bottom: 20px;
+  color: #fff;
+  border-bottom: 1px solid var(--border-cyan);
+  padding-bottom: 8px;
+  text-shadow: 0 0 8px rgba(0, 240, 255, 0.3);
+}
+
+.control-group {
+  margin-bottom: 20px;
+}
+
+.control-group:last-child {
+  margin-bottom: 0;
+}
+
+.control-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.75);
+  margin-bottom: 8px;
+  letter-spacing: 1px;
+}
+
+/* Holographic Telemetry Panel */
+.telemetry-panel {
+  flex: 1;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.8rem;
+  padding: 20px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.telemetry-log {
+  flex: 1;
+  overflow-y: auto;
+  margin-top: 10px;
+  color: rgba(255, 255, 255, 0.6);
+  line-height: 1.6;
+}
+
+.log-entry {
+  margin-bottom: 6px;
+  word-break: break-all;
+}
+
+.log-entry .timestamp {
+  color: var(--neon-cyan);
+  margin-right: 8px;
+}
+
+.log-entry.active-log {
+  color: var(--neon-green);
+  text-shadow: 0 0 5px rgba(57, 255, 20, 0.4);
+}
+
+.log-entry.error-log {
+  color: var(--neon-red);
+}
+
+/* Core Interface Elements */
+.arc-shield {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex: 1;
+}
+
+/* Audio visualizer bar group */
+.visualizer-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 40px;
+  margin-top: -10px;
+  margin-bottom: 20px;
+}
+
+.visualizer-bar {
+  width: 4px;
+  height: 4px;
+  background: var(--neon-cyan);
+  border-radius: 2px;
+  box-shadow: 0 0 5px var(--neon-cyan);
+  transition: height 0.1s ease;
+}
+
+.visualizer-container.recording .visualizer-bar {
+  background: var(--neon-red);
+  box-shadow: 0 0 5px var(--neon-red);
+}
+
+.visualizer-container.speaking .visualizer-bar {
+  background: var(--neon-cyan);
+}
+
+/* Floating HUD layout */
+.hud-container {
+  width: 100%;
+}
+
+/* Responsive screen media queries */
+@media (max-width: 900px) {
+  .app-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  
+  .sidebar-column {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+}
+
+@media (max-width: 600px) {
+  .app-header {
+    flex-direction: column;
+    gap: 15px;
+    align-items: flex-start;
+  }
+  
+  .sidebar-column {
+    grid-template-columns: 1fr;
+  }
+  
+  .main-column {
+    min-height: 400px;
+  }
+  
+  .brand-title {
+    font-size: 1.3rem;
+  }
+}

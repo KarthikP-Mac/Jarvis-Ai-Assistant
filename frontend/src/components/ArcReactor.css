@@ -1,0 +1,308 @@
+.arc-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  margin: 30px 0;
+  user-select: none;
+}
+
+.arc-reactor {
+  position: relative;
+  width: 200px;
+  height: 200px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(10, 25, 50, 0.4) 0%, rgba(2, 6, 16, 0.9) 70%);
+  border: 1px solid rgba(0, 240, 255, 0.15);
+  box-shadow: 
+    0 0 30px rgba(0, 240, 255, 0.05),
+    inset 0 0 20px rgba(0, 240, 255, 0.05);
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ring {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+/* Outer glowing border ring */
+.outer-ring {
+  width: 96%;
+  height: 96%;
+  border: 2px solid rgba(0, 240, 255, 0.12);
+  border-top: 2px solid var(--neon-cyan);
+  border-bottom: 2px solid var(--neon-cyan);
+  animation: spin-clockwise 25s linear infinite;
+  box-shadow: 0 0 8px rgba(0, 240, 255, 0.1);
+}
+
+/* Notched HUD ring */
+.notch-ring {
+  width: 88%;
+  height: 88%;
+  border: 2px dashed rgba(0, 240, 255, 0.35);
+  animation: spin-counter-clockwise 15s linear infinite;
+}
+
+/* Power Cell group SVGs */
+.power-cells-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  animation: spin-clockwise 45s linear infinite;
+}
+
+.reactor-cell {
+  opacity: 0.75;
+  transition: fill 0.3s ease, filter 0.3s ease;
+  filter: drop-shadow(0 0 2px var(--neon-cyan));
+}
+
+/* Inner spinner ring */
+.inner-spinner {
+  width: 55%;
+  height: 55%;
+  border: 2px dotted rgba(0, 240, 255, 0.45);
+  animation: spin-counter-clockwise 8s linear infinite;
+}
+
+/* The Core center */
+.core-center {
+  position: absolute;
+  width: 38%;
+  height: 38%;
+  border-radius: 50%;
+  background: #020610;
+  border: 2px solid rgba(0, 240, 255, 0.4);
+  box-shadow: 
+    0 0 20px rgba(0, 240, 255, 0.2),
+    inset 0 0 10px rgba(0, 240, 255, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  transition: all 0.3s ease;
+}
+
+.core-led {
+  width: 50%;
+  height: 50%;
+  border-radius: 50%;
+  background: radial-gradient(circle, #ffffff 0%, var(--neon-cyan) 60%, rgba(0, 240, 255, 0.4) 100%);
+  box-shadow: 
+    0 0 15px var(--neon-cyan),
+    0 0 30px var(--neon-cyan);
+  transition: all 0.3s ease;
+}
+
+/* Technical Crosshairs */
+.crosshair {
+  position: absolute;
+  background: rgba(0, 240, 255, 0.3);
+  pointer-events: none;
+}
+
+.crosshair.vertical {
+  width: 1px;
+  height: 120%;
+  top: -10%;
+}
+
+.crosshair.horizontal {
+  width: 120%;
+  height: 1px;
+  left: -10%;
+}
+
+/* Wave ripples radiating */
+.wave-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid var(--neon-cyan);
+  pointer-events: none;
+  opacity: 0;
+  z-index: 1;
+}
+
+.wave-1 {
+  width: 100%;
+  height: 100%;
+  animation: ripple 2s cubic-bezier(0.1, 0.8, 0.3, 1) infinite;
+}
+
+.wave-2 {
+  width: 100%;
+  height: 100%;
+  animation: ripple 2s cubic-bezier(0.1, 0.8, 0.3, 1) infinite;
+  animation-delay: 1s;
+}
+
+@keyframes ripple {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+    border-color: inherit;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+    border-color: transparent;
+  }
+}
+
+/* State Modifiers styling */
+
+/* 1. Listening state (Alert/Red) */
+.arc-container.listening .arc-reactor {
+  border-color: rgba(255, 0, 60, 0.3);
+  box-shadow: 0 0 40px rgba(255, 0, 60, 0.2);
+}
+
+.arc-container.listening .outer-ring {
+  border-color: rgba(255, 0, 60, 0.2);
+  border-top-color: var(--neon-red);
+  border-bottom-color: var(--neon-red);
+  animation-duration: 4s; /* Spin much faster */
+}
+
+.arc-container.listening .notch-ring {
+  border-color: rgba(255, 0, 60, 0.5);
+  animation-duration: 3s;
+}
+
+.arc-container.listening .inner-spinner {
+  border-color: rgba(255, 0, 60, 0.6);
+  animation-duration: 2s;
+}
+
+.arc-container.listening .reactor-cell {
+  filter: drop-shadow(0 0 4px var(--neon-red));
+}
+
+.arc-container.listening .core-center {
+  border-color: var(--neon-red);
+  box-shadow: 0 0 25px rgba(255, 0, 60, 0.4);
+}
+
+.arc-container.listening .core-led {
+  background: radial-gradient(circle, #ffffff 0%, var(--neon-red) 60%, rgba(255, 0, 60, 0.4) 100%);
+  box-shadow: 
+    0 0 15px var(--neon-red),
+    0 0 35px var(--neon-red);
+  animation: core-pulse-listening 0.8s ease-in-out infinite alternate;
+}
+
+.arc-container.listening .wave-ring {
+  border-color: var(--neon-red);
+}
+
+/* 2. Processing state (Warning/Orange) */
+.arc-container.processing .arc-reactor {
+  border-color: rgba(255, 108, 2, 0.3);
+  box-shadow: 0 0 45px rgba(255, 108, 2, 0.15);
+}
+
+.arc-container.processing .outer-ring {
+  border-color: rgba(255, 108, 2, 0.2);
+  border-top-color: var(--neon-orange);
+  border-bottom-color: var(--neon-orange);
+  animation-duration: 8s;
+}
+
+.arc-container.processing .core-center {
+  border-color: var(--neon-orange);
+}
+
+.arc-container.processing .core-led {
+  background: radial-gradient(circle, #ffffff 0%, var(--neon-orange) 60%, rgba(255, 108, 2, 0.4) 100%);
+  box-shadow: 
+    0 0 15px var(--neon-orange),
+    0 0 30px var(--neon-orange);
+  animation: core-pulse-processing 1.5s ease-in-out infinite alternate;
+}
+
+/* 3. Speaking state (Active Cyan) */
+.arc-container.speaking .arc-reactor {
+  box-shadow: 0 0 40px rgba(0, 240, 255, 0.2);
+}
+
+.arc-container.speaking .core-led {
+  animation: core-pulse-speaking 0.5s ease-in-out infinite alternate;
+}
+
+.arc-container.speaking .outer-ring {
+  animation-duration: 10s;
+}
+
+/* Micro LED pulses */
+@keyframes core-pulse-listening {
+  0% { transform: scale(0.9); opacity: 0.8; }
+  100% { transform: scale(1.1); opacity: 1; }
+}
+
+@keyframes core-pulse-processing {
+  0% { transform: scale(0.95); opacity: 0.7; }
+  100% { transform: scale(1.05); opacity: 1; }
+}
+
+@keyframes core-pulse-speaking {
+  0% { transform: scale(0.9); }
+  100% { transform: scale(1.15); }
+}
+
+/* HUD labels */
+.reactor-hud-label {
+  margin-top: 15px;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.9rem;
+  letter-spacing: 2px;
+  text-align: center;
+  height: 20px;
+}
+
+.status-text {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 2px;
+}
+
+.status-text.idle {
+  color: var(--neon-cyan);
+  text-shadow: 0 0 5px var(--neon-cyan);
+  opacity: 0.7;
+  animation: glow-breathe 2s ease-in-out infinite alternate;
+}
+
+.status-text.alert {
+  color: var(--neon-red);
+  background: rgba(255, 0, 60, 0.1);
+  border: 1px solid var(--neon-red);
+  box-shadow: 0 0 8px rgba(255, 0, 60, 0.2);
+}
+
+.status-text.warning {
+  color: var(--neon-orange);
+  background: rgba(255, 108, 2, 0.1);
+  border: 1px solid var(--neon-orange);
+  box-shadow: 0 0 8px rgba(255, 108, 2, 0.2);
+}
+
+.status-text.active {
+  color: var(--neon-cyan);
+  background: rgba(0, 240, 255, 0.15);
+  border: 1px solid var(--neon-cyan);
+  box-shadow: 0 0 10px rgba(0, 240, 255, 0.3);
+}
+
+@keyframes glow-breathe {
+  0% { opacity: 0.4; }
+  100% { opacity: 0.9; }
+}
