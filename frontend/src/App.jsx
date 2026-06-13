@@ -31,6 +31,28 @@ export default function App() {
   const [wakeWordEnabled, setWakeWordEnabled] = useState(true);
   const [groqKey, setGroqKey] = useState('');
   const [elevenKey, setElevenKey] = useState('');
+  const [detectedTimezone, setDetectedTimezone] = useState(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  const [detectedLocation, setDetectedLocation] = useState(null);
+
+  // Detect location and timezone dynamically
+  useEffect(() => {
+    fetch('https://ipapi.co/json/')
+      .then(res => res.json())
+      .then(data => {
+        if (data.timezone) {
+          setDetectedTimezone(data.timezone);
+        }
+        if (data.city) {
+          const locStr = `${data.city}, ${data.country_name || data.country}`;
+          setDetectedLocation(locStr);
+          addLog(`Location synchronized: ${locStr} (${data.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone})`, 'info');
+        }
+      })
+      .catch((err) => {
+        console.warn('IP-based location detection failed, using browser defaults:', err);
+        addLog(`Location offline. Fallback timezone set: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`, 'info');
+      });
+  }, []);
 
   // Audio Recording & Analysis Refs
   const wsRef = useRef(null);
@@ -109,7 +131,7 @@ export default function App() {
         wsRef.current.close();
       }
     };
-  }, [groqKey, elevenKey, language, voice]);
+  }, [groqKey, elevenKey, language, voice, detectedTimezone, detectedLocation]);
 
   // Handle Wake Word listener status
   useEffect(() => {
@@ -146,7 +168,9 @@ export default function App() {
         language: language,
         voice: voice,
         groq_key: groqKey || null,
-        eleven_key: elevenKey || null
+        eleven_key: elevenKey || null,
+        timezone: detectedTimezone,
+        location: detectedLocation
       }));
     };
 

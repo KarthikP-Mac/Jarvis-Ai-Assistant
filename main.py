@@ -22,6 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from groq import Groq
 from dotenv import load_dotenv
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 # Load environment variables from .env file in the same directory as this script
 _env_path = Path(__file__).resolve().parent / ".env"
@@ -127,7 +128,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "get_weather",
-            "description": "Get the current weather for a specific location.",
+            "description": "Get the current weather for a specific location. If the user does not specify a location, leave this blank.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -135,8 +136,7 @@ TOOLS = [
                         "type": "string",
                         "description": "City name and/or country, e.g., 'Hyderabad', 'New York, USA'."
                     }
-                },
-                "required": ["location"]
+                }
             }
         }
     },
@@ -258,6 +258,8 @@ async def websocket_endpoint(websocket: WebSocket):
     selected_voice = "jarvis" # jarvis, friday, robot
     custom_groq_key = None
     custom_eleven_key = None
+    user_timezone = "UTC"
+    user_location = None
     
     try:
         while True:
@@ -274,7 +276,9 @@ async def websocket_endpoint(websocket: WebSocket):
                     selected_voice = data.get("voice", selected_voice)
                     custom_groq_key = data.get("groq_key")
                     custom_eleven_key = data.get("eleven_key")
-                    print(f"Config updated: lang={selected_language}, voice={selected_voice}")
+                    user_timezone = data.get("timezone", user_timezone)
+                    user_location = data.get("location", user_location)
+                    print(f"Config updated: lang={selected_language}, voice={selected_voice}, timezone={user_timezone}, location={user_location}")
                     await websocket.send_json({"type": "config_applied"})
                     
                 elif msg_type == "clear_history":
@@ -383,9 +387,19 @@ async def websocket_endpoint(websocket: WebSocket):
                             try:
                                 if function_name == "get_current_time":
                                     from datetime import datetime
-                                    tool_result = datetime.now().strftime("%A, %B %d, %Y at %I:%M %p")
+                                    try:
+                                        tz = ZoneInfo(user_timezone)
+                                        local_dt = datetime.now(tz)
+                                    except Exception as tz_err:
+                                        print(f"Error localizing time to {user_timezone}: {tz_err}")
+                                        local_dt = datetime.now()
+                                    tool_result = local_dt.strftime("%A, %B %d, %Y at %I:%M %p")
                                 elif function_name == "get_weather":
                                     location = function_args.get("location", "")
+                                    if not location and user_location:
+                                        location = user_location
+                                    elif not location:
+                                        location = "New York"
                                     tool_result = await get_weather(location)
                                 elif function_name == "calculate":
                                     expr = function_args.get("expression", "")
