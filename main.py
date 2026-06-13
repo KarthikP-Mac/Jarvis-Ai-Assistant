@@ -1,3 +1,12 @@
+import sys
+# Reconfigure stdout/stderr to use UTF-8 encoding on Windows to prevent UnicodeEncodeError (charmap codec errors)
+if sys.platform.startswith('win'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except AttributeError:
+        pass
+
 import os
 import io
 import re
@@ -62,6 +71,140 @@ Follow these strict instructions:
 3. No Markdown: Do not output bold (**), italics (*), lists, bullet points, headers, or emojis. Write out numbers as words if possible.
 4. Maintain the JARVIS persona: speak with a helpful, sophisticated British-styled tone, and call the user 'Sir' or 'Ma'am' when appropriate.
 """
+
+# Tool schemas for Llama 3.3 function calling
+TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_current_time",
+            "description": "Get the current date and time.",
+            "parameters": {
+                "type": "object",
+                "properties": {}
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "open_website",
+            "description": "Open a website or application URL in the user's browser, e.g. YouTube, Google, Facebook, etc.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "The exact URL to open, starting with http:// or https:// (e.g. 'https://www.youtube.com')."
+                    },
+                    "site_name": {
+                        "type": "string",
+                        "description": "The name of the site (e.g. 'YouTube')."
+                    }
+                },
+                "required": ["url", "site_name"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": "Search the web/Google for general information or search queries.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The search query query string."
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "description": "Get the current weather for a specific location.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": "City name and/or country, e.g., 'Hyderabad', 'New York, USA'."
+                    }
+                },
+                "required": ["location"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_timer",
+            "description": "Set a countdown timer for a specific duration in seconds.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "seconds": {
+                        "type": "integer",
+                        "description": "Duration of the timer in seconds."
+                    },
+                    "label": {
+                        "type": "string",
+                        "description": "Optional label for the timer, e.g., 'cooking'."
+                    }
+                },
+                "required": ["seconds"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "calculate",
+            "description": "Evaluate a mathematical or arithmetical expression.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "expression": {
+                        "type": "string",
+                        "description": "The math expression to calculate, e.g., '245 * 18 + 10'."
+                    }
+                },
+                "required": ["expression"]
+            }
+        }
+    }
+]
+
+async def get_weather(location: str) -> str:
+    """Fetch current weather from wttr.in."""
+    try:
+        import httpx
+        encoded_loc = location.strip().replace(" ", "+")
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"https://wttr.in/{encoded_loc}?format=%C,+%t", timeout=5.0)
+            if response.status_code == 200:
+                result = response.text.strip()
+                return f"Weather in {location}: {result}"
+            else:
+                return f"Could not fetch weather. wttr.in returned code {response.status_code}"
+    except Exception as e:
+        return f"Error fetching weather: {str(e)}"
+
+def calculate(expression: str) -> str:
+    """Safely evaluate a mathematical expression."""
+    if not re.match(r"^[0-9\+\-\*\/\%\(\)\.\s]+$", expression):
+        return "Error: Invalid characters in math expression. Only standard arithmetic operations are allowed."
+    try:
+        res = eval(expression, {"__builtins__": None}, {})
+        return f"Result: {res}"
+    except Exception as e:
+        return f"Calculation error: {str(e)}"
+
 
 def detect_native_language(text: str) -> str:
     """Detect if the text contains Hindi (Devanagari) or Telugu scripts."""
@@ -196,23 +339,127 @@ async def websocket_endpoint(websocket: WebSocket):
                 
                 # Append user prompt to history
                 chat_history.append({"role": "user", "content": user_text})
-                
-                # 2. LLM Reasoning (Groq Llama 3.3)
+                # 2. LLM Reasoning with Hybrid Model Routing
                 try:
-                    chat_completion = groq_client.chat.completions.create(
+                    # First completion call: non-streaming using llama-3.1-8b-instant
+                    # at temperature 0.0 to ensure deterministic, valid tool calls.
+                    completion = groq_client.chat.completions.create(
                         messages=chat_history,
-                        model="llama-3.3-70b-versatile",
-                        temperature=0.7,
-                        stream=True
+                        model="llama-3.1-8b-instant",
+                        temperature=0.0,
+                        tools=TOOLS,
+                        tool_choice="auto"
                     )
                     
-                    # Define generator for streaming tokens
-                    def token_generator():
-                        for chunk in chat_completion:
-                            token = chunk.choices[0].delta.content
-                            if token:
-                                yield token
-                                
+                    response_message = completion.choices[0].message
+                    tool_calls = response_message.tool_calls
+                    
+                    has_called_tools = False
+                    
+                    if tool_calls:
+                        has_called_tools = True
+                        
+                        # Convert response message to a dictionary to avoid serialization errors later
+                        assistant_msg = {"role": "assistant", "content": response_message.content or ""}
+                        assistant_msg["tool_calls"] = [
+                            {
+                                "id": tc.id,
+                                "type": tc.type,
+                                "function": {
+                                    "name": tc.function.name,
+                                    "arguments": tc.function.arguments
+                                }
+                            }
+                            for tc in tool_calls
+                        ]
+                        chat_history.append(assistant_msg)
+                        
+                        for tool_call in tool_calls:
+                            function_name = tool_call.function.name
+                            function_args = json.loads(tool_call.function.arguments)
+                            print(f"Executing tool: {function_name} with args: {function_args}")
+                            
+                            tool_result = ""
+                            try:
+                                if function_name == "get_current_time":
+                                    from datetime import datetime
+                                    tool_result = datetime.now().strftime("%A, %B %d, %Y at %I:%M %p")
+                                elif function_name == "get_weather":
+                                    location = function_args.get("location", "")
+                                    tool_result = await get_weather(location)
+                                elif function_name == "calculate":
+                                    expr = function_args.get("expression", "")
+                                    tool_result = calculate(expr)
+                                elif function_name == "open_website":
+                                    url = function_args.get("url", "")
+                                    site_name = function_args.get("site_name", "")
+                                    # Send action signal to frontend
+                                    await websocket.send_json({
+                                        "type": "action",
+                                        "action": "open_website",
+                                        "url": url,
+                                        "site_name": site_name
+                                    })
+                                    tool_result = f"Successfully triggered opening of {site_name} in frontend."
+                                elif function_name == "web_search":
+                                    query = function_args.get("query", "")
+                                    # Send action signal to frontend
+                                    await websocket.send_json({
+                                        "type": "action",
+                                        "action": "web_search",
+                                        "query": query
+                                    })
+                                    tool_result = f"Successfully triggered web search for '{query}' in frontend."
+                                elif function_name == "set_timer":
+                                    seconds = function_args.get("seconds", 0)
+                                    label = function_args.get("label", "Timer")
+                                    # Send action signal to frontend
+                                    await websocket.send_json({
+                                        "type": "action",
+                                        "action": "set_timer",
+                                        "seconds": seconds,
+                                        "label": label
+                                    })
+                                    tool_result = f"Successfully set a timer for {seconds} seconds."
+                            except Exception as tool_err:
+                                tool_result = f"Error executing tool: {str(tool_err)}"
+                            
+                            chat_history.append({
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "name": function_name,
+                                "content": tool_result
+                            })
+                            print(f"Tool execution complete. Result appended: {tool_result}")
+                        
+                        # Since we executed tools, get the final response from LLM using streaming
+                        chat_completion = groq_client.chat.completions.create(
+                            messages=chat_history,
+                            model="llama-3.3-70b-versatile",
+                            temperature=0.7,
+                            stream=True
+                        )
+                        
+                        def token_generator():
+                            for chunk in chat_completion:
+                                token = chunk.choices[0].delta.content
+                                if token:
+                                    yield token
+                    else:
+                        # No tools called. Query llama-3.3-70b-versatile directly for the chat response
+                        chat_completion = groq_client.chat.completions.create(
+                            messages=chat_history,
+                            model="llama-3.3-70b-versatile",
+                            temperature=0.7,
+                            stream=True
+                        )
+                        
+                        def token_generator():
+                            for chunk in chat_completion:
+                                token = chunk.choices[0].delta.content
+                                if token:
+                                    yield token
+                    
                     full_response = ""
                     
                     # 3. Sentence-level Streaming TTS Pipeline
@@ -226,17 +473,13 @@ async def websocket_endpoint(websocket: WebSocket):
                         await websocket.send_json({"type": "jarvis_sentence", "text": sentence})
                         
                         # Determine synthesis engine: ElevenLabs vs Kokoro vs Browser
-                        # Detect script to see if it's Hindi or Telugu
                         detected_lang = detect_native_language(sentence)
-                        
-                        # Check ElevenLabs premium override
                         eleven_key = custom_eleven_key or os.getenv("ELEVEN_LABS_API_KEY")
                         
                         if eleven_key:
                             # ElevenLabs Synthesis (Premium Cloud)
                             try:
                                 import httpx
-                                # Select voice based on tone matrix
                                 voice_id = "ErXwobaYiN019PkySvjV" # default British Male (Antoni)
                                 if selected_voice == "friday":
                                     voice_id = "EXAVITQu4vr4xnSDxMaL" # Female (Bella)
@@ -330,7 +573,9 @@ async def websocket_endpoint(websocket: WebSocket):
                                     })
                                     
                     # Add Jarvis reply to memory
-                    chat_history.append({"role": "assistant", "content": full_response.strip()})
+                    if has_called_tools:
+                        chat_history.append({"role": "assistant", "content": full_response.strip()})
+                    
                     await websocket.send_json({"type": "processing_ended"})
                     
                 except WebSocketDisconnect:
@@ -379,6 +624,9 @@ async def serve_index():
 
 @app.get("/{fallback_path:path}")
 async def fallback(fallback_path: str):
+    static_file = os.path.join("static", fallback_path)
+    if os.path.exists(static_file) and os.path.isfile(static_file):
+        return FileResponse(static_file)
     if os.path.exists("static/index.html"):
         return FileResponse("static/index.html")
     raise HTTPException(status_code=404, detail="Resource Not Found")

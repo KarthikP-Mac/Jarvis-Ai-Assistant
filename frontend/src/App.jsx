@@ -22,6 +22,8 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
   const [logs, setLogs] = useState([]);
+  const [activeAction, setActiveAction] = useState(null);
+
 
   // Settings States
   const [language, setLanguage] = useState('auto');
@@ -41,6 +43,19 @@ export default function App() {
   const animationFrameRef = useRef(null);
   const audioChunksRef = useRef([]);
 
+  // Mirror critical states into refs so SpeechRecognition callbacks
+  // (which are created once per instance) always read the latest values
+  // instead of capturing stale closures.
+  const isListeningRef = useRef(false);
+  const isProcessingRef = useRef(false);
+  const isSpeakingRef = useRef(false);
+  const wakeWordEnabledRef = useRef(true);
+
+  useEffect(() => { isListeningRef.current = isListening; }, [isListening]);
+  useEffect(() => { isProcessingRef.current = isProcessing; }, [isProcessing]);
+  useEffect(() => { isSpeakingRef.current = isSpeaking; }, [isSpeaking]);
+  useEffect(() => { wakeWordEnabledRef.current = wakeWordEnabled; }, [wakeWordEnabled]);
+
   // Load saved credentials from localStorage on mount
   useEffect(() => {
     const savedGroq = localStorage.getItem('jarvis_groq_key') || '';
@@ -58,6 +73,11 @@ export default function App() {
     setVoice(savedVoice);
 
     addLog('System initialization complete. Core protocols online.', 'info');
+
+    // Request notification permission for timers
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
 
     // Setup Audio player finished callback
     player.onPlaybackFinished = () => {
@@ -170,6 +190,39 @@ export default function App() {
           }
           break;
 
+        case 'action':
+          if (data.action === 'open_website') {
+            addLog(`Executing Action: Opening ${data.site_name || 'website'}...`, 'info');
+            setActiveAction({
+              type: 'open_website',
+              url: data.url,
+              site_name: data.site_name,
+              message: `Confirm opening ${data.site_name || 'website'} at: ${data.url}`
+            });
+            window.open(data.url, '_blank');
+          } else if (data.action === 'web_search') {
+            addLog(`Executing Action: Searching web for "${data.query}"...`, 'info');
+            setActiveAction({
+              type: 'web_search',
+              query: data.query,
+              message: `Confirm searching Google for: "${data.query}"`
+            });
+            window.open(`https://www.google.com/search?q=${encodeURIComponent(data.query)}`, '_blank');
+          } else if (data.action === 'set_timer') {
+            addLog(`Executing Action: Setting timer for ${data.seconds} seconds (${data.label || 'Timer'})...`, 'info');
+            setTimeout(() => {
+              if (Notification.permission === 'granted') {
+                new Notification("Jarvis Notification", {
+                  body: `Timer finished: ${data.label || 'Timer'}`
+                });
+              }
+              playChime(true);
+              addLog(`Timer Alert: "${data.label || 'Timer'}" finished!`, 'info');
+            }, data.seconds * 1000);
+          }
+          break;
+
+
         case 'history_cleared':
           addLog('Jarvis context cache wiped clean.', 'info');
           break;
@@ -184,6 +237,7 @@ export default function App() {
           break;
       }
     };
+
 
     ws.onclose = () => {
       if (wsRef.current !== ws) return;
@@ -221,14 +275,35 @@ export default function App() {
     const voices = window.speechSynthesis.getVoices();
     let matchingVoice = null;
 
-    if (voice === 'friday') {
-      // Look for female voice in specified language
-      matchingVoice = voices.find(v => v.lang.startsWith(lang.split('-')[0]) &&
-        (v.name.toLowerCase().includes('female') || v.name.toLowerCase().includes('zira') || v.name.toLowerCase().includes('google')));
-    } else {
-      // Look for male voice
-      matchingVoice = voices.find(v => v.lang.startsWith(lang.split('-')[0]) &&
-        (v.name.toLowerCase().includes('male') || v.name.toLowerCase().includes('david') || v.name.toLowerCase().includes('microsoft') || v.name.toLowerCase().includes('ravi')));
+    const langPrefix = lang.split('-')[0].toLowerCase();
+    const langVoices = voices.filter(v => v.lang.toLowerCase().startsWith(langPrefix));
+
+    if (langVoices.length > 0) {
+      if (voice === 'friday') {
+        // Look for female voice in specified language
+        matchingVoice = langVoices.find(v =>
+          v.name.toLowerCase().includes('female') ||
+          v.name.toLowerCase().includes('zira') ||
+          v.name.toLowerCase().includes('google') ||
+          v.name.toLowerCase().includes('heera') ||
+          v.name.toLowerCase().includes('shruti') ||
+          v.name.toLowerCase().includes('kalpana')
+        );
+      } else {
+        // Look for male voice
+        matchingVoice = langVoices.find(v =>
+          v.name.toLowerCase().includes('male') ||
+          v.name.toLowerCase().includes('david') ||
+          v.name.toLowerCase().includes('microsoft') ||
+          v.name.toLowerCase().includes('ravi') ||
+          v.name.toLowerCase().includes('mohan')
+        );
+      }
+
+      // Fallback: if we filtered for gender but got nothing, use the first voice for this language
+      if (!matchingVoice) {
+        matchingVoice = langVoices[0];
+      }
     }
 
     if (matchingVoice) {
@@ -261,6 +336,7 @@ export default function App() {
       try {
         speechRecognitionRef.current.stop();
       } catch (e) { }
+      speechRecognitionRef.current = null;
     }
 
     const rec = new SpeechRecognition();
@@ -278,17 +354,33 @@ export default function App() {
       if (text.includes('jarvis') || text.includes('hey jarvis') || text.includes('hi jarvis')) {
         addLog('Wake word "Jarvis" detected! Activating core...', 'info');
         playChime(true);
-        // Start recording
+        // Stop recognition before starting recording to avoid mic conflicts
+        try { rec.stop(); } catch (e) { }
+        // Start recording after a short delay for the chime
         setTimeout(startRecording, 400);
       }
     };
 
+    let lastRestartTime = 0;
     rec.onend = () => {
-      // Keep listening in background if toggle is active
-      if (wakeWordEnabled && !isListening && !isProcessing && !isSpeaking) {
-        try {
-          rec.start();
-        } catch (e) { }
+      // Use refs to read latest state — avoids stale closure bug where
+      // captured state values from creation time prevent restart.
+      if (wakeWordEnabledRef.current && !isListeningRef.current && !isProcessingRef.current && !isSpeakingRef.current) {
+        const now = Date.now();
+        // Enforce a minimum of 1.5s between restarts to prevent infinite rapid loops that crash the browser
+        const delay = Math.max(1500 - (now - lastRestartTime), 300);
+        setTimeout(() => {
+          // Re-check refs after delay — state may have changed
+          if (wakeWordEnabledRef.current && !isListeningRef.current && !isProcessingRef.current && !isSpeakingRef.current) {
+            try {
+              lastRestartTime = Date.now();
+              rec.start();
+              console.log('Wake-word monitor restarted.');
+            } catch (e) {
+              console.warn('Wake-word restart failed, will retry via useEffect:', e.message);
+            }
+          }
+        }, delay);
       }
     };
 
@@ -354,6 +446,7 @@ export default function App() {
     setIsSpeaking(false);
     setUserText('');
     setJarvisText('');
+    setActiveAction(null);
 
     cleanupAudio();
     stopWakeWordRecognition(); // Pause background wake word
@@ -442,6 +535,7 @@ export default function App() {
   };
 
   const handleArcClick = () => {
+    setActiveAction(null);
     if (isListening) {
       stopRecording();
     } else {
@@ -543,6 +637,19 @@ export default function App() {
     analyserRef.current = null;
   };
 
+  const syncConfig = (overrides = {}) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      const payload = {
+        type: 'config',
+        language: overrides.language !== undefined ? overrides.language : language,
+        voice: overrides.voice !== undefined ? overrides.voice : voice,
+        groq_key: overrides.groqKey !== undefined ? overrides.groqKey : (groqKey || null),
+        eleven_key: overrides.elevenKey !== undefined ? overrides.elevenKey : (elevenKey || null)
+      };
+      wsRef.current.send(JSON.stringify(payload));
+    }
+  };
+
   // Save Settings Modal API Keys
   const handleSaveKeys = (newGroqKey, newElevenKey) => {
     setGroqKey(newGroqKey);
@@ -551,6 +658,7 @@ export default function App() {
     localStorage.setItem('jarvis_eleven_key', newElevenKey);
 
     addLog('API keys updated in local memory storage.', 'info');
+    syncConfig({ groqKey: newGroqKey, elevenKey: newElevenKey });
   };
 
   // Toggle Background Wake Word
@@ -572,12 +680,14 @@ export default function App() {
     setLanguage(val);
     localStorage.setItem('jarvis_language', val);
     addLog(`Multilingual router set to: ${val.toUpperCase()}`, 'info');
+    syncConfig({ language: val });
   };
 
   const handleVoiceChange = (val) => {
     setVoice(val);
     localStorage.setItem('jarvis_voice', val);
     addLog(`Voice synthesis model mapped to: ${val.toUpperCase()}`, 'info');
+    syncConfig({ voice: val });
   };
 
   return (
@@ -588,7 +698,7 @@ export default function App() {
           <Shield className="w-8 h-8 icon-cyan spin-anim" style={{ animationDuration: '60s' }} />
           <div>
             <h1 className="brand-title">JARVIS AI</h1>
-            <span className="brand-version">SYS v3.3-MONOLITHIC</span>
+            <span className="brand-version">PROJECT MAC • QUANTUM MIND</span>
           </div>
         </div>
 
@@ -641,6 +751,8 @@ export default function App() {
               onToggle={() => setHudOpen(!hudOpen)}
               isProcessing={isProcessing}
               isSpeaking={isSpeaking}
+              activeAction={activeAction}
+              onClearAction={() => setActiveAction(null)}
             />
           </div>
         </main>

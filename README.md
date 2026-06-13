@@ -6,7 +6,7 @@ A high-performance, real-time AI voice assistant inspired by Iron Man's JARVIS. 
 
 ```mermaid
 graph TD
-    subgraph Client [Browser Client (React HUD)]
+    subgraph Client ["Browser Client (React HUD)"]
         UI[Arc Reactor UI Core]
         Mic[Microphone Capturer]
         VAD[VAD Silence Detector]
@@ -14,7 +14,7 @@ graph TD
         RobotFilter[Robot Ring Modulator Filter]
     end
 
-    subgraph Backend [Python FastAPI Server]
+    subgraph Backend ["Python FastAPI Server"]
         WS[WebSocket Manager]
         Whisper[Groq Whisper STT]
         Llama[Groq Llama 3.3 LLM]
@@ -65,7 +65,7 @@ When "Robot" mode is active, the React Audio Player instantiates an audio graph 
 This runs instantly in the browser's Web Audio context with zero server processing latency.
 
 ---
-
+<!-- 
 ## 🚀 Local Installation & Setup
 
 ### Prerequisites
@@ -154,3 +154,8 @@ Hugging Face Spaces automatically builds your space using the `Dockerfile` in th
      git push -u origin main --force
      ```
 4. Once pushed, Hugging Face will trigger the multi-stage Docker build, pre-bake the Kokoro models, compile React static scripts, and spin up your monolithic container on port 7860 automatically!
+
+5. for ui changes in python file
+xcopy /E /I /Y frontend\dist static
+uvicorn main:app --reload --host 127.0.0.1 --port 7860
+python download_model.py -->

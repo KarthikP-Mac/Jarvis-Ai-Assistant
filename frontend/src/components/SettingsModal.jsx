@@ -2,15 +2,15 @@ import React, { useState } from 'react';
 import { Settings, X, Eye, EyeOff, Save, Trash2 } from 'lucide-react';
 import './SettingsModal.css';
 
-export default function SettingsModal({ 
-  isOpen, 
-  onClose, 
-  onSaveKeys, 
-  onClearHistory, 
-  wakeWordEnabled, 
+export default function SettingsModal({
+  isOpen,
+  onClose,
+  onSaveKeys,
+  onClearHistory,
+  wakeWordEnabled,
   onToggleWakeWord,
   initialGroqKey,
-  initialElevenKey 
+  initialElevenKey
 }) {
   const [groqKey, setGroqKey] = useState(initialGroqKey || '');
   const [elevenKey, setElevenKey] = useState(initialElevenKey || '');
@@ -44,7 +44,7 @@ export default function SettingsModal({
           <div className="modal-section">
             <h3 className="section-title">API ACCESS CREDENTIALS</h3>
             <p className="section-desc">Credentials are saved locally in your browser cache and transmitted securely over WebSocket.</p>
-            
+
             {/* Groq Key Input */}
             <div className="input-group">
               <label className="input-label">GROQ API KEY (REQUIRED FOR BRAIN/STT)</label>
@@ -53,12 +53,12 @@ export default function SettingsModal({
                   type={showGroq ? "text" : "password"}
                   value={groqKey}
                   onChange={(e) => setGroqKey(e.target.value)}
-                  placeholder="gsk_..."
+                  placeholder="Enter GROQ API key"
                   className="cyber-input"
                 />
-                <button 
-                  type="button" 
-                  onClick={() => setShowGroq(!showGroq)} 
+                <button
+                  type="button"
+                  onClick={() => setShowGroq(!showGroq)}
                   className="input-visibility-btn"
                 >
                   {showGroq ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -77,9 +77,9 @@ export default function SettingsModal({
                   placeholder="Enter ElevenLabs API key for premium voices"
                   className="cyber-input"
                 />
-                <button 
-                  type="button" 
-                  onClick={() => setShowEleven(!showEleven)} 
+                <button
+                  type="button"
+                  onClick={() => setShowEleven(!showEleven)}
                   className="input-visibility-btn"
                 >
                   {showEleven ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -97,8 +97,8 @@ export default function SettingsModal({
                 <label className="switch-label">MONITOR "HEY JARVIS" WORD</label>
                 <p className="switch-desc">Allows Jarvis to listen in the background and activate when you say "Hey Jarvis" or "Jarvis".</p>
               </div>
-              <button 
-                onClick={onToggleWakeWord} 
+              <button
+                onClick={onToggleWakeWord}
                 className={`cyber-button ${wakeWordEnabled ? 'active-glow' : 'inactive'}`}
               >
                 {wakeWordEnabled ? 'ACTIVE MONITOR' : 'DISABLED'}

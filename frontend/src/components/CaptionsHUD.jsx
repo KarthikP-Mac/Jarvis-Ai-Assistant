@@ -2,7 +2,7 @@ import React, { useRef, useEffect } from 'react';
 import { Terminal, MessageSquare, Mic, Disc } from 'lucide-react';
 import './CaptionsHUD.css';
 
-export default function CaptionsHUD({ userText, jarvisText, isOpen, onToggle, isProcessing, isSpeaking }) {
+export default function CaptionsHUD({ userText, jarvisText, isOpen, onToggle, isProcessing, isSpeaking, activeAction, onClearAction }) {
   const scrollRef = useRef(null);
 
   // Automatically scroll captions container to bottom on new text
@@ -10,7 +10,8 @@ export default function CaptionsHUD({ userText, jarvisText, isOpen, onToggle, is
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [userText, jarvisText]);
+  }, [userText, jarvisText, activeAction]);
+
 
   if (!isOpen) {
     return (
@@ -59,6 +60,33 @@ export default function CaptionsHUD({ userText, jarvisText, isOpen, onToggle, is
             <p className="hud-text typewriter-effect">{jarvisText}</p>
           </div>
         )}
+
+        {/* Action Card Confirmation */}
+        {activeAction && (
+          <div className="hud-action-card">
+            <div className="hud-action-title">ACTION REQUIRED // CONFIRM PROTOCOL</div>
+            <p className="hud-action-desc">{activeAction.message}</p>
+            <div className="hud-action-buttons">
+              <button 
+                className="hud-action-btn confirm"
+                onClick={() => {
+                  if (activeAction.type === 'open_website') {
+                    window.open(activeAction.url, '_blank');
+                  } else if (activeAction.type === 'web_search') {
+                    window.open(`https://www.google.com/search?q=${encodeURIComponent(activeAction.query)}`, '_blank');
+                  }
+                  onClearAction();
+                }}
+              >
+                EXECUTE ACTION
+              </button>
+              <button className="hud-action-btn cancel" onClick={onClearAction}>
+                DISMISS
+              </button>
+            </div>
+          </div>
+        )}
+
 
         {/* Processing Indicator */}
         {isProcessing && !jarvisText && (
