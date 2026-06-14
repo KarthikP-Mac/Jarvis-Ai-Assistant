@@ -156,6 +156,13 @@ Hugging Face Spaces automatically builds your space using the `Dockerfile` in th
 4. Once pushed, Hugging Face will trigger the multi-stage Docker build, pre-bake the Kokoro models, compile React static scripts, and spin up your monolithic container on port 7860 automatically!
 
 5. for ui changes in python file
+npm run build
 xcopy /E /I /Y frontend\dist static
 uvicorn main:app --reload --host 127.0.0.1 --port 7860
-python download_model.py -->
+python download_model.py 
+
+
+docker build -t jarvis-assistant .
+docker run -p 7860:7860 -e GROQ_API_KEY="gsk_your_key_here" jarvis-assistant
+docker run -p 7860:7860 --env-file .env jarvis-assistant
+http://127.0.0.1:7860/-->

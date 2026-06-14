@@ -194,6 +194,19 @@
   box-shadow: 0 0 15px var(--neon-red) !important;
 }
 
+.btn-warning {
+  border-color: #f59e0b !important;
+  color: #f59e0b !important;
+  text-shadow: 0 0 5px rgba(245, 158, 11, 0.4) !important;
+}
+
+.btn-warning:hover {
+  background: #f59e0b !important;
+  color: var(--bg-dark) !important;
+  text-shadow: none !important;
+  box-shadow: 0 0 15px #f59e0b !important;
+}
+
 .modal-footer {
   display: flex;
   align-items: center;

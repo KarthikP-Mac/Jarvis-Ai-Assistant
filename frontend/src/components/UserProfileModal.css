@@ -1,0 +1,74 @@
+.modal-onboarding-overlay {
+  z-index: 1100; /* overlay settings modal if necessary */
+  background: rgba(3, 7, 18, 0.9);
+}
+
+.onboarding-content {
+  border: 1.5px solid var(--neon-cyan);
+  box-shadow: 0 0 35px rgba(0, 240, 255, 0.25), inset 0 0 15px rgba(0, 240, 255, 0.1);
+}
+
+.welcome-banner {
+  padding: 14px;
+  background: rgba(0, 240, 255, 0.03);
+  border-left: 3px solid var(--neon-cyan);
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
+.welcome-title {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.85rem;
+  letter-spacing: 1px;
+  color: var(--neon-cyan);
+  margin-bottom: 6px;
+  text-shadow: 0 0 8px rgba(0, 240, 255, 0.3);
+}
+
+.welcome-desc {
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.65);
+  line-height: 1.4;
+}
+
+.error-banner {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgb(239, 68, 68);
+  padding: 10px 14px;
+  border-radius: 4px;
+  color: rgb(248, 113, 113);
+  font-size: 0.78rem;
+  font-family: 'Share Tech Mono', monospace;
+  margin-bottom: 6px;
+}
+
+.icon-red {
+  color: rgb(239, 68, 68);
+  filter: drop-shadow(0 0 4px rgba(239, 68, 68, 0.5));
+}
+
+.select-cyber {
+  appearance: none;
+  background: rgba(7, 11, 25, 0.85);
+  cursor: pointer;
+}
+
+.select-cyber option {
+  background: var(--bg-dark, #070b19);
+  color: #fff;
+  padding: 10px;
+}
+
+.w-full {
+  width: 100%;
+}
+
+.justify-center {
+  justify-content: center;
+}
+
+.onboarding-footer {
+  border-top: none;
+  padding-top: 10px;
+  padding-bottom: 0;
+}

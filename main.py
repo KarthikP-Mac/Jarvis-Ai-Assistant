@@ -59,8 +59,16 @@ if os.path.exists(MODEL_PATH) and os.path.exists(VOICES_PATH):
 else:
     print("Kokoro-82M files not found in model/ directory. Local TTS will be unavailable (browser SpeechSynthesis fallback will be used).")
 
-# System prompt for Jarvis
-SYSTEM_PROMPT = """You are JARVIS, a highly sophisticated, polite, and witty AI voice assistant inspired by Iron Man's JARVIS. 
+# Dynamic System prompt for Jarvis
+def get_system_prompt(user_name: str = "User", user_title: str = "Sir") -> str:
+    # If user_title is None or empty or 'none', we don't use a title.
+    title_str = ""
+    if user_title and user_title.lower() != "none":
+        title_str = f"Address the user as '{user_title}'."
+    else:
+        title_str = f"Address the user by their name '{user_name}' or without any title if appropriate."
+
+    return f"""You are JARVIS, a highly sophisticated, polite, and witty AI voice assistant inspired by Iron Man's JARVIS. 
 Follow these strict instructions:
 1. Analyze the language of the user's input:
    - If they speak English, reply in English.
@@ -70,8 +78,10 @@ Follow these strict instructions:
    - If they speak Teluglish (Telugu blended with English, written in English/Latin letters), reply in Teluglish.
 2. Voice optimization: Keep replies highly concise, natural, and conversational (usually 1-2 sentences, maximum 3).
 3. No Markdown: Do not output bold (**), italics (*), lists, bullet points, headers, or emojis. Write out numbers as words if possible.
-4. Maintain the JARVIS persona: speak with a helpful, sophisticated British-styled tone, and call the user 'Sir' or 'Ma'am' when appropriate.
+4. Maintain the JARVIS persona: speak with a helpful, sophisticated British-styled tone. The user's name is {user_name}. {title_str} Use this to greet and refer to the user when appropriate, instead of defaulting to 'Sir'.
 """
+
+SYSTEM_PROMPT = get_system_prompt()
 
 # Tool schemas for Llama 3.3 function calling
 TOOLS = [
@@ -260,6 +270,8 @@ async def websocket_endpoint(websocket: WebSocket):
     custom_eleven_key = None
     user_timezone = "UTC"
     user_location = None
+    user_name = "User"
+    user_title = "Sir"
     
     try:
         while True:
@@ -278,11 +290,19 @@ async def websocket_endpoint(websocket: WebSocket):
                     custom_eleven_key = data.get("eleven_key")
                     user_timezone = data.get("timezone", user_timezone)
                     user_location = data.get("location", user_location)
-                    print(f"Config updated: lang={selected_language}, voice={selected_voice}, timezone={user_timezone}, location={user_location}")
+                    user_name = data.get("user_name", user_name)
+                    user_title = data.get("user_title", user_title)
+                    print(f"Config updated: lang={selected_language}, voice={selected_voice}, timezone={user_timezone}, location={user_location}, name={user_name}, title={user_title}")
+                    
+                    # Update system prompt in chat_history if it exists
+                    sys_prompt = get_system_prompt(user_name, user_title)
+                    if chat_history and chat_history[0]["role"] == "system":
+                        chat_history[0]["content"] = sys_prompt
+                        
                     await websocket.send_json({"type": "config_applied"})
                     
                 elif msg_type == "clear_history":
-                    chat_history = [{"role": "system", "content": SYSTEM_PROMPT}]
+                    chat_history = [{"role": "system", "content": get_system_prompt(user_name, user_title)}]
                     print("Conversation history cleared.")
                     await websocket.send_json({"type": "history_cleared"})
                     

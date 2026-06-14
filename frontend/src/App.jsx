@@ -5,6 +5,7 @@ import CaptionsHUD from './components/CaptionsHUD';
 import VoiceSelector from './components/VoiceSelector';
 import LanguageSelector from './components/LanguageSelector';
 import SettingsModal from './components/SettingsModal';
+import UserProfileModal from './components/UserProfileModal';
 import { AudioPlayer } from './utils/audioPlayer';
 import './App.css';
 
@@ -27,6 +28,11 @@ export default function App() {
 
   // Settings States
   const [language, setLanguage] = useState('auto');
+  const [userName, setUserName] = useState('');
+  const [userTitle, setUserTitle] = useState('Sir');
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showWelcomeBack, setShowWelcomeBack] = useState(false);
+  const [welcomeName, setWelcomeName] = useState('');
   const [voice, setVoice] = useState('jarvis');
   const [wakeWordEnabled, setWakeWordEnabled] = useState(true);
   const [groqKey, setGroqKey] = useState('');
@@ -88,11 +94,24 @@ export default function App() {
     const savedLanguage = localStorage.getItem('jarvis_language') || 'auto';
     const savedVoice = localStorage.getItem('jarvis_voice') || 'jarvis';
 
+    const savedName = localStorage.getItem('jarvis_user_name') || '';
+    const savedTitle = localStorage.getItem('jarvis_user_title') || 'Sir';
+
     setGroqKey(savedGroq);
     setElevenKey(savedEleven);
     setWakeWordEnabled(wakeWordDefault);
     setLanguage(savedLanguage);
     setVoice(savedVoice);
+    setUserName(savedName);
+    setUserTitle(savedTitle);
+
+    if (!savedName) {
+      setShowOnboarding(true);
+    } else {
+      // Existing user on page reload — ask if they want to continue or start fresh
+      setWelcomeName(savedName);
+      setShowWelcomeBack(true);
+    }
 
     addLog('System initialization complete. Core protocols online.', 'info');
 
@@ -131,16 +150,20 @@ export default function App() {
         wsRef.current.close();
       }
     };
+    // NOTE: userName/userTitle removed from deps to prevent reconnect storms on reset.
+    // Profile updates are synced via syncConfig() instead.
   }, [groqKey, elevenKey, language, voice, detectedTimezone, detectedLocation]);
 
   // Handle Wake Word listener status
+  // Block wake-word while any modal overlay is active to prevent browser crashes
   useEffect(() => {
-    if (wakeWordEnabled && !isListening && !isProcessing && !isSpeaking) {
+    const anyModalOpen = showOnboarding || showWelcomeBack;
+    if (wakeWordEnabled && !isListening && !isProcessing && !isSpeaking && !anyModalOpen) {
       startWakeWordRecognition();
     } else {
       stopWakeWordRecognition();
     }
-  }, [wakeWordEnabled, isListening, isProcessing, isSpeaking]);
+  }, [wakeWordEnabled, isListening, isProcessing, isSpeaking, showOnboarding, showWelcomeBack]);
 
   const connectWebSocket = () => {
     if (wsRef.current) {
@@ -170,7 +193,9 @@ export default function App() {
         groq_key: groqKey || null,
         eleven_key: elevenKey || null,
         timezone: detectedTimezone,
-        location: detectedLocation
+        location: detectedLocation,
+        user_name: userName || 'User',
+        user_title: userTitle || 'Sir'
       }));
     };
 
@@ -387,6 +412,11 @@ export default function App() {
 
     let lastRestartTime = 0;
     rec.onend = () => {
+      // Prevent phantom/leak restarts of discarded instances
+      if (speechRecognitionRef.current !== rec) {
+        console.log('Obsolete wake-word monitor instance ended. Discarding.');
+        return;
+      }
       // Use refs to read latest state — avoids stale closure bug where
       // captured state values from creation time prevent restart.
       if (wakeWordEnabledRef.current && !isListeningRef.current && !isProcessingRef.current && !isSpeakingRef.current) {
@@ -395,7 +425,7 @@ export default function App() {
         const delay = Math.max(1500 - (now - lastRestartTime), 300);
         setTimeout(() => {
           // Re-check refs after delay — state may have changed
-          if (wakeWordEnabledRef.current && !isListeningRef.current && !isProcessingRef.current && !isSpeakingRef.current) {
+          if (speechRecognitionRef.current === rec && wakeWordEnabledRef.current && !isListeningRef.current && !isProcessingRef.current && !isSpeakingRef.current) {
             try {
               lastRestartTime = Date.now();
               rec.start();
@@ -668,21 +698,58 @@ export default function App() {
         language: overrides.language !== undefined ? overrides.language : language,
         voice: overrides.voice !== undefined ? overrides.voice : voice,
         groq_key: overrides.groqKey !== undefined ? overrides.groqKey : (groqKey || null),
-        eleven_key: overrides.elevenKey !== undefined ? overrides.elevenKey : (elevenKey || null)
+        eleven_key: overrides.elevenKey !== undefined ? overrides.elevenKey : (elevenKey || null),
+        user_name: overrides.userName !== undefined ? overrides.userName : (userName || 'User'),
+        user_title: overrides.userTitle !== undefined ? overrides.userTitle : (userTitle || 'Sir')
       };
       wsRef.current.send(JSON.stringify(payload));
     }
   };
 
-  // Save Settings Modal API Keys
-  const handleSaveKeys = (newGroqKey, newElevenKey) => {
+  // Save Settings Modal API Keys and User Profile
+  const handleSaveKeys = (newGroqKey, newElevenKey, newUserName, newUserTitle) => {
     setGroqKey(newGroqKey);
     setElevenKey(newElevenKey);
+    setUserName(newUserName);
+    setUserTitle(newUserTitle);
     localStorage.setItem('jarvis_groq_key', newGroqKey);
     localStorage.setItem('jarvis_eleven_key', newElevenKey);
+    localStorage.setItem('jarvis_user_name', newUserName);
+    localStorage.setItem('jarvis_user_title', newUserTitle);
 
-    addLog('API keys updated in local memory storage.', 'info');
-    syncConfig({ groqKey: newGroqKey, elevenKey: newElevenKey });
+    addLog('API keys and user profile updated in local memory storage.', 'info');
+    syncConfig({ 
+      groqKey: newGroqKey, 
+      elevenKey: newElevenKey, 
+      userName: newUserName, 
+      userTitle: newUserTitle 
+    });
+  };
+
+  // Save onboarding settings
+  const handleSaveOnboarding = (name, title) => {
+    setUserName(name);
+    setUserTitle(title);
+    localStorage.setItem('jarvis_user_name', name);
+    localStorage.setItem('jarvis_user_title', title);
+    setShowOnboarding(false);
+    
+    addLog(`Cognitive profile initialized: Welcome ${title !== 'none' ? title : ''} ${name}`, 'info');
+    
+    // Force sync settings to backend immediately
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'config',
+        language: language,
+        voice: voice,
+        groq_key: groqKey || null,
+        eleven_key: elevenKey || null,
+        timezone: detectedTimezone,
+        location: detectedLocation,
+        user_name: name,
+        user_title: title
+      }));
+    }
   };
 
   // Toggle Background Wake Word
@@ -691,6 +758,57 @@ export default function App() {
     setWakeWordEnabled(nextState);
     localStorage.setItem('jarvis_wake_word', nextState ? 'true' : 'false');
     addLog(`Wake-word monitor toggled: ${nextState ? 'ACTIVE' : 'DISABLED'}`, 'info');
+  };
+
+  // Full identity reset — wipes all localStorage, clears HUD, and re-shows onboarding
+  const handleResetIdentity = () => {
+    // Stop any active audio/speech immediately
+    player.stop();
+    window.speechSynthesis.cancel();
+    stopWakeWordRecognition();
+
+    localStorage.removeItem('jarvis_user_name');
+    localStorage.removeItem('jarvis_user_title');
+    localStorage.removeItem('jarvis_groq_key');
+    localStorage.removeItem('jarvis_eleven_key');
+    localStorage.removeItem('jarvis_wake_word');
+    localStorage.removeItem('jarvis_language');
+    localStorage.removeItem('jarvis_voice');
+
+    // Reset all state
+    setUserName('');
+    setUserTitle('Sir');
+    setGroqKey('');
+    setElevenKey('');
+    setWakeWordEnabled(true);
+    setLanguage('auto');
+    setVoice('jarvis');
+
+    // Clear HUD display, subtitles, and logs
+    setUserText('');
+    setJarvisText('');
+    setActiveAction(null);
+    setLogs([]);
+    setIsSpeaking(false);
+    setIsProcessing(false);
+    setIsListening(false);
+
+    // Clear backend conversation history
+    handleClearHistory();
+
+    // Show onboarding for the new user
+    setShowOnboarding(true);
+  };
+
+  // Welcome-back prompt handlers
+  const handleWelcomeBack = (choice) => {
+    setShowWelcomeBack(false);
+    if (choice === 'continue') {
+      addLog(`Welcome back, ${welcomeName}. Resuming previous session.`, 'info');
+    } else {
+      // Start fresh — full reset
+      handleResetIdentity();
+    }
   };
 
   // Clear Chat History on backend
@@ -831,12 +949,56 @@ export default function App() {
         isOpen={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         onSaveKeys={handleSaveKeys}
-        onClearHistory={handleClearHistory}
+        onResetIdentity={handleResetIdentity}
         wakeWordEnabled={wakeWordEnabled}
         onToggleWakeWord={handleToggleWakeWord}
         initialGroqKey={groqKey}
         initialElevenKey={elevenKey}
+        initialUserName={userName}
+        initialUserTitle={userTitle}
       />
+
+      {/* User Onboarding Profile Modal */}
+      <UserProfileModal
+        isOpen={showOnboarding}
+        onSave={handleSaveOnboarding}
+      />
+
+      {/* Welcome Back prompt on page reload */}
+      {showWelcomeBack && (
+        <div className="modal-overlay" style={{ zIndex: 1200 }}>
+          <div className="modal-content glass-panel" style={{ maxWidth: 460, textAlign: 'center' }}>
+            <div className="modal-header" style={{ justifyContent: 'center', borderBottom: 'none' }}>
+              <span className="modal-title">SESSION RECOVERY DETECTED</span>
+            </div>
+            <div className="modal-body" style={{ alignItems: 'center', gap: 16 }}>
+              <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.85rem', lineHeight: 1.5 }}>
+                Welcome back, <strong style={{ color: 'var(--neon-cyan)' }}>{welcomeName}</strong>. 
+                A previous identity session was found in local memory.
+              </p>
+              <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.78rem' }}>
+                Would you like to continue with your saved profile, or start fresh as a new user?
+              </p>
+              <div className="flex-row" style={{ gap: 12, marginTop: 8 }}>
+                <button
+                  className="cyber-button active-glow"
+                  onClick={() => handleWelcomeBack('continue')}
+                  style={{ flex: 1 }}
+                >
+                  CONTINUE SESSION
+                </button>
+                <button
+                  className="cyber-button btn-warning"
+                  onClick={() => handleWelcomeBack('fresh')}
+                  style={{ flex: 1 }}
+                >
+                  START FRESH
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
