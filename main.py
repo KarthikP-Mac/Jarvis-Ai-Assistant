@@ -58,6 +58,28 @@ if os.path.exists(MODEL_PATH) and os.path.exists(VOICES_PATH):
         print(f"Failed to load Kokoro-82M engine: {e}")
 else:
     print("Kokoro-82M files not found in model/ directory. Local TTS will be unavailable (browser SpeechSynthesis fallback will be used).")
+# Guardrails Check for Inappropriate Content
+def is_unsafe_content(text: str) -> bool:
+    if not text:
+        return False
+    # List of common adult, gambling, illegal, and explicit keywords/regexes
+    unsafe_patterns = [
+        r"\b(porn|pornography|xxx|sex|adult|erotic|nsfw|naked|nudity|nude|milf|hentai|strip|stripclub|prostitution|escort)\b",
+        r"\b(gamble|gambling|casino|betting|slot\s+machine|poker\s+online|lottery\s+scam|blackjack)\b",
+        r"\b(drug\s+dealer|illegal\s+drugs|cocaine|heroin|methamphetamine|mdma|weed\s+sell|buy\s+drugs)\b",
+        r"\b(suicide|kill\s+myself|self\s+harm|bomb\s+recipe|make\s+explosive|hack\s+wifi|pirate\s+software|crack\s+software)\b",
+        r"\bxvideos\b|\bpornhub\b|\bxnxx\b|\bonlyfans\b|\bcamgirl\b|\bchaturbate\b|\btorrent\b"
+    ]
+    combined_pattern = re.compile("|".join(unsafe_patterns), re.IGNORECASE)
+    return bool(combined_pattern.search(text))
+
+def get_refusal_response(language: str = "auto") -> str:
+    if language == "hi":
+        return "क्षमा करें, मैं सुरक्षा नियमों के कारण इस अनुरोध को पूरा नहीं कर सकता।"
+    elif language == "te":
+        return "క్షమించండి, భద్రతా నిబంధనల ప్రకారం నేను ఈ అభ్యర్థనను నెరవేర్చలేను."
+    else:
+        return "I apologize, but safety protocols prevent me from complying with this request."
 
 # Dynamic System prompt for Jarvis
 def get_system_prompt(user_name: str = "User", user_title: str = "Sir") -> str:
@@ -79,6 +101,7 @@ Follow these strict instructions:
 2. Voice optimization: Keep replies highly concise, natural, and conversational (usually 1-2 sentences, maximum 3).
 3. No Markdown: Do not output bold (**), italics (*), lists, bullet points, headers, or emojis. Write out numbers as words if possible.
 4. Maintain the JARVIS persona: speak with a helpful, sophisticated British-styled tone. The user's name is {user_name}. {title_str} Use this to greet and refer to the user when appropriate, instead of defaulting to 'Sir'.
+5. Safety Protocol: You must decline requests involving pornography, adult content, gambling, illegal drugs, self-harm, weapons, or cyber-attacks. Keep refusals extremely polite, brief, and in the user's detected language/dialect.
 """
 
 SYSTEM_PROMPT = get_system_prompt()
@@ -365,134 +388,152 @@ async def websocket_endpoint(websocket: WebSocket):
                 chat_history.append({"role": "user", "content": user_text})
                 # 2. LLM Reasoning with Hybrid Model Routing
                 try:
-                    # First completion call: non-streaming using llama-3.1-8b-instant
-                    # at temperature 0.0 to ensure deterministic, valid tool calls.
-                    completion = groq_client.chat.completions.create(
-                        messages=chat_history,
-                        model="llama-3.1-8b-instant",
-                        temperature=0.0,
-                        tools=TOOLS,
-                        tool_choice="auto"
-                    )
-                    
-                    response_message = completion.choices[0].message
-                    tool_calls = response_message.tool_calls
-                    
-                    has_called_tools = False
-                    
-                    if tool_calls:
-                        has_called_tools = True
+                    if is_unsafe_content(user_text):
+                        print(f"Guardrail trigger: Unsafe user text blocked -> '{user_text}'")
+                        refusal_text = get_refusal_response(selected_language)
                         
-                        # Convert response message to a dictionary to avoid serialization errors later
-                        assistant_msg = {"role": "assistant", "content": response_message.content or ""}
-                        assistant_msg["tool_calls"] = [
-                            {
-                                "id": tc.id,
-                                "type": tc.type,
-                                "function": {
-                                    "name": tc.function.name,
-                                    "arguments": tc.function.arguments
-                                }
-                            }
-                            for tc in tool_calls
-                        ]
-                        chat_history.append(assistant_msg)
-                        
-                        for tool_call in tool_calls:
-                            function_name = tool_call.function.name
-                            function_args = json.loads(tool_call.function.arguments)
-                            print(f"Executing tool: {function_name} with args: {function_args}")
-                            
-                            tool_result = ""
-                            try:
-                                if function_name == "get_current_time":
-                                    from datetime import datetime
-                                    try:
-                                        tz = ZoneInfo(user_timezone)
-                                        local_dt = datetime.now(tz)
-                                    except Exception as tz_err:
-                                        print(f"Error localizing time to {user_timezone}: {tz_err}")
-                                        local_dt = datetime.now()
-                                    tool_result = local_dt.strftime("%A, %B %d, %Y at %I:%M %p")
-                                elif function_name == "get_weather":
-                                    location = function_args.get("location", "")
-                                    if not location and user_location:
-                                        location = user_location
-                                    elif not location:
-                                        location = "New York"
-                                    tool_result = await get_weather(location)
-                                elif function_name == "calculate":
-                                    expr = function_args.get("expression", "")
-                                    tool_result = calculate(expr)
-                                elif function_name == "open_website":
-                                    url = function_args.get("url", "")
-                                    site_name = function_args.get("site_name", "")
-                                    # Send action signal to frontend
-                                    await websocket.send_json({
-                                        "type": "action",
-                                        "action": "open_website",
-                                        "url": url,
-                                        "site_name": site_name
-                                    })
-                                    tool_result = f"Successfully triggered opening of {site_name} in frontend."
-                                elif function_name == "web_search":
-                                    query = function_args.get("query", "")
-                                    # Send action signal to frontend
-                                    await websocket.send_json({
-                                        "type": "action",
-                                        "action": "web_search",
-                                        "query": query
-                                    })
-                                    tool_result = f"Successfully triggered web search for '{query}' in frontend."
-                                elif function_name == "set_timer":
-                                    seconds = function_args.get("seconds", 0)
-                                    label = function_args.get("label", "Timer")
-                                    # Send action signal to frontend
-                                    await websocket.send_json({
-                                        "type": "action",
-                                        "action": "set_timer",
-                                        "seconds": seconds,
-                                        "label": label
-                                    })
-                                    tool_result = f"Successfully set a timer for {seconds} seconds."
-                            except Exception as tool_err:
-                                tool_result = f"Error executing tool: {str(tool_err)}"
-                            
-                            chat_history.append({
-                                "role": "tool",
-                                "tool_call_id": tool_call.id,
-                                "name": function_name,
-                                "content": tool_result
-                            })
-                            print(f"Tool execution complete. Result appended: {tool_result}")
-                        
-                        # Since we executed tools, get the final response from LLM using streaming
-                        chat_completion = groq_client.chat.completions.create(
-                            messages=chat_history,
-                            model="llama-3.3-70b-versatile",
-                            temperature=0.7,
-                            stream=True
-                        )
+                        # Add a fake refusal message to assistant history
+                        chat_history.append({"role": "assistant", "content": refusal_text})
                         
                         def token_generator():
-                            for chunk in chat_completion:
-                                token = chunk.choices[0].delta.content
-                                if token:
-                                    yield token
+                            yield refusal_text
                     else:
-                        # No tools called. Query llama-3.3-70b-versatile directly for the chat response
-                        chat_completion = groq_client.chat.completions.create(
+                        # First completion call: non-streaming using llama-3.1-8b-instant
+                        # at temperature 0.0 to ensure deterministic, valid tool calls.
+                        completion = groq_client.chat.completions.create(
                             messages=chat_history,
-                            model="llama-3.3-70b-versatile",
-                            temperature=0.7,
-                            stream=True
+                            model="llama-3.1-8b-instant",
+                            temperature=0.0,
+                            tools=TOOLS,
+                            tool_choice="auto"
                         )
                         
-                        def token_generator():
-                            for chunk in chat_completion:
-                                token = chunk.choices[0].delta.content
-                                if token:
-                                    yield token
+                        response_message = completion.choices[0].message
+                        tool_calls = response_message.tool_calls
+                        
+                        has_called_tools = False
+                        
+                        if tool_calls:
+                            has_called_tools = True
+                            
+                            # Convert response message to a dictionary to avoid serialization errors later
+                            assistant_msg = {"role": "assistant", "content": response_message.content or ""}
+                            assistant_msg["tool_calls"] = [
+                                {
+                                    "id": tc.id,
+                                    "type": tc.type,
+                                    "function": {
+                                        "name": tc.function.name,
+                                        "arguments": tc.function.arguments
+                                    }
+                                }
+                                for tc in tool_calls
+                            ]
+                            chat_history.append(assistant_msg)
+                            
+                            for tool_call in tool_calls:
+                                function_name = tool_call.function.name
+                                function_args = json.loads(tool_call.function.arguments)
+                                print(f"Executing tool: {function_name} with args: {function_args}")
+                                
+                                tool_result = ""
+                                try:
+                                    if function_name == "get_current_time":
+                                        from datetime import datetime
+                                        try:
+                                            tz = ZoneInfo(user_timezone)
+                                            local_dt = datetime.now(tz)
+                                        except Exception as tz_err:
+                                            print(f"Error localizing time to {user_timezone}: {tz_err}")
+                                            local_dt = datetime.now()
+                                        tool_result = local_dt.strftime("%A, %B %d, %Y at %I:%M %p")
+                                    elif function_name == "get_weather":
+                                        location = function_args.get("location", "")
+                                        if not location and user_location:
+                                            location = user_location
+                                        elif not location:
+                                            location = "New York"
+                                        tool_result = await get_weather(location)
+                                    elif function_name == "calculate":
+                                        expr = function_args.get("expression", "")
+                                        tool_result = calculate(expr)
+                                    elif function_name == "open_website":
+                                        url = function_args.get("url", "")
+                                        site_name = function_args.get("site_name", "")
+                                        if is_unsafe_content(url) or is_unsafe_content(site_name):
+                                            print(f"Blocked unsafe open_website: url={url}, site={site_name}")
+                                            tool_result = "Blocked by security guardrail: Request involves inappropriate or unsafe content."
+                                        else:
+                                            # Send action signal to frontend
+                                            await websocket.send_json({
+                                                "type": "action",
+                                                "action": "open_website",
+                                                "url": url,
+                                                "site_name": site_name
+                                            })
+                                            tool_result = f"Successfully triggered opening of {site_name} in frontend."
+                                    elif function_name == "web_search":
+                                        query = function_args.get("query", "")
+                                        if is_unsafe_content(query):
+                                            print(f"Blocked unsafe web_search: query={query}")
+                                            tool_result = "Blocked by security guardrail: Query involves inappropriate or unsafe content."
+                                        else:
+                                            # Send action signal to frontend
+                                            await websocket.send_json({
+                                                "type": "action",
+                                                "action": "web_search",
+                                                "query": query
+                                            })
+                                            tool_result = f"Successfully triggered web search for '{query}' in frontend."
+                                    elif function_name == "set_timer":
+                                        seconds = function_args.get("seconds", 0)
+                                        label = function_args.get("label", "Timer")
+                                        # Send action signal to frontend
+                                        await websocket.send_json({
+                                            "type": "action",
+                                            "action": "set_timer",
+                                            "seconds": seconds,
+                                            "label": label
+                                        })
+                                        tool_result = f"Successfully set a timer for {seconds} seconds."
+                                except Exception as tool_err:
+                                    tool_result = f"Error executing tool: {str(tool_err)}"
+                                
+                                chat_history.append({
+                                    "role": "tool",
+                                    "tool_call_id": tool_call.id,
+                                    "name": function_name,
+                                    "content": tool_result
+                                })
+                                print(f"Tool execution complete. Result appended: {tool_result}")
+                            
+                            # Since we executed tools, get the final response from LLM using streaming
+                            chat_completion = groq_client.chat.completions.create(
+                                messages=chat_history,
+                                model="llama-3.3-70b-versatile",
+                                temperature=0.7,
+                                stream=True
+                            )
+                            
+                            def token_generator():
+                                for chunk in chat_completion:
+                                    token = chunk.choices[0].delta.content
+                                    if token:
+                                        yield token
+                        else:
+                            # No tools called. Query llama-3.3-70b-versatile directly for the chat response
+                            chat_completion = groq_client.chat.completions.create(
+                                messages=chat_history,
+                                model="llama-3.3-70b-versatile",
+                                temperature=0.7,
+                                stream=True
+                            )
+                            
+                            def token_generator():
+                                for chunk in chat_completion:
+                                    token = chunk.choices[0].delta.content
+                                    if token:
+                                        yield token
                     
                     full_response = ""
                     
