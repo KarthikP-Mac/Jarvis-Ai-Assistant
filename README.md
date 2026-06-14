@@ -64,6 +64,18 @@ When "Robot" mode is active, the React Audio Player instantiates an audio graph 
 - An amplitude modulator `GainNode` driven by a `sine` carrier oscillator at 55Hz (creating a low metallic ring modulation hum).
 This runs instantly in the browser's Web Audio context with zero server processing latency.
 
+### 5. Guardrails Check for Inappropriate Content
+
+Guardrails implementation:
+
+A Python set of regex patterns it checks for explicit, adult, gambling, drug, and illegal content.
+
+If the user asks for inappropriate content, Jarvis will politely refuse and give a safety message in the same language (English/Hindi/Telugu).
+
+The check runs on the server *after* Groq transcription but *before* the model generates the response, ensuring no unsafe content is processed or spoken.
+
+
+
 ---
 <!-- 
 ## 🚀 Local Installation & Setup
@@ -165,4 +177,4 @@ python download_model.py
 docker build -t jarvis-assistant .
 docker run -p 7860:7860 -e GROQ_API_KEY="gsk_your_key_here" jarvis-assistant
 docker run -p 7860:7860 --env-file .env jarvis-assistant
-http://127.0.0.1:7860/-->
+127.0.0.1:7860-->
