@@ -261,3 +261,26 @@
     font-size: 1.3rem;
   }
 }
+
+/* Telemetry Panel Minimization Styles */
+.telemetry-panel.minimized {
+  flex: 0 0 auto !important;
+  max-height: 60px;
+}
+
+.telemetry-panel.minimized .widget-title {
+  margin-bottom: 0;
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.panel-toggle-btn {
+  transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.panel-toggle-btn:hover {
+  color: #fff !important;
+  transform: scale(1.1);
+  text-shadow: 0 0 8px var(--neon-cyan);
+}
+

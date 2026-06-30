@@ -1,3 +1,13 @@
+---
+title: Real-time AI voice assistant app
+colorFrom: indigo
+colorTo: blue
+sdk: docker
+pinned: false
+thumbnail: >-
+  https://cdn-uploads.huggingface.co/production/uploads/6a05f6821b095ce1e9af9a8f/ZzrmN7s39K1-kYWWdnlIm.png
+short_description: WebSocket audio streaming, wake-word support.
+---
 # Monolithic Multilingual Jarvis AI Voice Assistant 🕶️⚡
 
 A high-performance, real-time AI voice assistant inspired by Iron Man's JARVIS. Built with a futuristic glassmorphic React frontend HUD and a lightning-fast FastAPI backend WebSocket routing core (<700ms latency). The application compiles into a single monolithic Docker container designed to deploy seamlessly to Hugging Face Spaces.
@@ -17,15 +27,15 @@ graph TD
     subgraph Backend ["Python FastAPI Server"]
         WS[WebSocket Manager]
         Whisper[Groq Whisper STT]
-        Llama[Groq Llama 3.3 LLM]
+        LLM[Groq Hybrid LLM]
         Kokoro[Local Kokoro-82M TTS]
         Eleven[Optional ElevenLabs TTS]
     end
 
     Mic -->|Raw WebM Blobs| WS
     WS -->|Audio Bytes| Whisper
-    Whisper -->|Transcribed Text| Llama
-    Llama -->|Token Stream| WS
+    Whisper -->|Transcribed Text| LLM
+    LLM -->|Token Stream| WS
     WS -->|Text Sentences| Kokoro
     Kokoro -->|WAV Audio Chunks| WS
     WS -->|Base64 WAV Chunks| Audio
@@ -36,7 +46,7 @@ graph TD
 - **Frontend UI:** React + Vite (Vanilla CSS, custom Orbitron + Share Tech Mono typography).
 - **Backend API Framework:** Python FastAPI (Uvicorn HTTP & Websockets).
 - **Speech-to-Text (STT):** Groq Cloud API using `whisper-large-v3-turbo`.
-- **Cognitive Engine (LLM):** Groq Cloud API using `llama-3.3-70b-versatile` with stream sentence tokenization.
+- **Cognitive Engine (LLM):** Hybrid model routing using Groq Cloud API. It leverages `llama-3.1-8b-instant` for fast, deterministic tool calling, and `qwen/qwen3.6-27b` (with fallback support for `openai/gpt-oss-120b`) for high-context conversational responses.
 - **Text-to-Speech (TTS):** 
   - **English:** Local, zero-cost `Kokoro-82M` (loaded via `kokoro-onnx` CPU engine in-container).
   - **Hindi & Telugu:** Native device `SpeechSynthesis` browser fallback (100% free, high quality, zero api lag).
@@ -55,14 +65,14 @@ graph TD
 To keep latency under 700ms, the FastAPI server tokenizes LLM streaming outputs into complete sentences on-the-fly. The backend synthesizes each sentence *immediately* and streams it back as a base64 WAV package. The browser queue decodes and plays each chunk in a continuous audio sequence, meaning Jarvis starts speaking the beginning of the reply while the LLM is still generating the end!
 
 ### 3. Strict Language-Matching Prompting
-System instructions direct the Llama 3.3 model to respond in the script matching the user's input (Devanagari for Hindi, Telugu characters for Telugu, and Latin script for colloquial Hinglish/Teluglish). 
+System instructions direct the model to respond in the script matching the user's input (Devanagari for Hindi, Telugu characters for Telugu, and Latin script for colloquial Hinglish/Teluglish). 
 
 ### 4. Client-side Robotic Audio Filter
 When "Robot" mode is active, the React Audio Player instantiates an audio graph containing:
 - A `BiquadFilterNode` peaking mid-high metallic frequencies (1200Hz, Q=8, Gain=12dB).
 - A feedback delay loop (15ms delay, 35% feedback) to simulate a steel metal chamber.
 - An amplitude modulator `GainNode` driven by a `sine` carrier oscillator at 55Hz (creating a low metallic ring modulation hum).
-This runs instantly in the browser's Web Audio context with zero server processing latency.
+- This runs instantly in the browser's Web Audio context with zero server processing latency.
 
 ### 5. Guardrails Check for Inappropriate Content
 

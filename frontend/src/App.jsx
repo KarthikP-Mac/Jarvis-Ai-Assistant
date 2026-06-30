@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Shield, Radio, Terminal, Settings, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Shield, Radio, Terminal, Settings, RefreshCw, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
 import ArcReactor from './components/ArcReactor';
 import CaptionsHUD from './components/CaptionsHUD';
 import VoiceSelector from './components/VoiceSelector';
@@ -24,6 +24,7 @@ export default function App() {
   const [wsConnected, setWsConnected] = useState(false);
   const [logs, setLogs] = useState([]);
   const [activeAction, setActiveAction] = useState(null);
+  const [telemetryMinimized, setTelemetryMinimized] = useState(false);
 
 
   // Settings States
@@ -920,26 +921,38 @@ export default function App() {
           </section>
 
           {/* Telemetry Console Panel */}
-          <section className="glass-panel widget-panel telemetry-panel">
-            <h2 className="widget-title">HUD TELEMETRY LOGS</h2>
-            <div className="telemetry-log">
-              {logs.length === 0 ? (
-                <div className="log-entry">
-                  <span className="timestamp">[00:00:00]</span>
-                  <span>SYSTEM SLEEP... Awaiting activity stream.</span>
-                </div>
-              ) : (
-                logs.map((log, index) => (
-                  <div
-                    key={index}
-                    className={`log-entry ${index === 0 && log.type === 'info' ? 'active-log' : ''} ${log.type === 'error' ? 'error-log' : ''}`}
-                  >
-                    <span className="timestamp">[{log.time}]</span>
-                    <span>{log.text}</span>
+          <section className={`glass-panel widget-panel telemetry-panel ${telemetryMinimized ? 'minimized' : ''}`}>
+            <h2 className="widget-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>HUD TELEMETRY LOGS</span>
+              <button 
+                onClick={() => setTelemetryMinimized(!telemetryMinimized)} 
+                className="panel-toggle-btn"
+                style={{ background: 'none', border: 'none', color: 'var(--neon-cyan)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '2px' }}
+                title={telemetryMinimized ? "Expand Logs" : "Minimize Logs"}
+              >
+                {telemetryMinimized ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </button>
+            </h2>
+            {!telemetryMinimized && (
+              <div className="telemetry-log">
+                {logs.length === 0 ? (
+                  <div className="log-entry">
+                    <span className="timestamp">[00:00:00]</span>
+                    <span>SYSTEM SLEEP... Awaiting activity stream.</span>
                   </div>
-                ))
-              )}
-            </div>
+                ) : (
+                  logs.map((log, index) => (
+                    <div
+                      key={index}
+                      className={`log-entry ${index === 0 && log.type === 'info' ? 'active-log' : ''} ${log.type === 'error' ? 'error-log' : ''}`}
+                    >
+                      <span className="timestamp">[{log.time}]</span>
+                      <span>{log.text}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
           </section>
         </aside>
       </div>

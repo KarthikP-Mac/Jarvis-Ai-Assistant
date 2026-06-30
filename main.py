@@ -81,14 +81,12 @@ def get_refusal_response(language: str = "auto") -> str:
     else:
         return "I apologize, but safety protocols prevent me from complying with this request."
 
-# Dynamic System prompt for Jarvis
 def get_system_prompt(user_name: str = "User", user_title: str = "Sir") -> str:
     # If user_title is None or empty or 'none', we don't use a title.
-    title_str = ""
-    if user_title and user_title.lower() != "none":
-        title_str = f"Address the user as '{user_title}'."
+    if user_title and user_title.strip() and user_title.lower() != "none":
+        address_instruction = f"Address the user as '{user_title}' (e.g., 'Yes, {user_title}', 'Of course, {user_title}'). Always use this title when talking to them."
     else:
-        title_str = f"Address the user by their name '{user_name}' or without any title if appropriate."
+        address_instruction = f"Address the user by their name '{user_name}' (without using titles like 'Sir')."
 
     return f"""You are JARVIS, a highly sophisticated, polite, and witty AI voice assistant inspired by Iron Man's JARVIS. 
 Follow these strict instructions:
@@ -100,11 +98,17 @@ Follow these strict instructions:
    - If they speak Teluglish (Telugu blended with English, written in English/Latin letters), reply in Teluglish.
 2. Voice optimization: Keep replies highly concise, natural, and conversational (usually 1-2 sentences, maximum 3).
 3. No Markdown: Do not output bold (**), italics (*), lists, bullet points, headers, or emojis. Write out numbers as words if possible.
-4. Maintain the JARVIS persona: speak with a helpful, sophisticated British-styled tone. The user's name is {user_name}. {title_str} Use this to greet and refer to the user when appropriate, instead of defaulting to 'Sir'.
+4. Maintain the JARVIS persona: speak with a helpful, sophisticated British-styled tone. The user's name is {user_name}. {address_instruction}
 5. Safety Protocol: You must decline requests involving pornography, adult content, gambling, illegal drugs, self-harm, weapons, or cyber-attacks. Keep refusals extremely polite, brief, and in the user's detected language/dialect.
 """
 
 SYSTEM_PROMPT = get_system_prompt()
+
+# Models configuration
+# ACTIVE_MODEL = "llama-3.3-70b-versatile"  # Deprecated (decommissioning Aug 16, 2026)
+# ACTIVE_MODEL = "openai/gpt-oss-120b"       # Faster MoE model
+ACTIVE_MODEL = "qwen/qwen3.6-27b"           # More tokens/context dense model
+
 
 # Tool schemas for Llama 3.3 function calling
 TOOLS = [
@@ -248,6 +252,104 @@ def detect_native_language(text: str) -> str:
     if any('\u0c00' <= c <= '\u0c7f' for c in text):
         return "te-IN"
     return "en-US"
+
+def filter_thinking_tokens(token_stream):
+    """Filters out any text between <think>...</think> and <tool_call>...</tool_call> tags from a streaming token generator."""
+    in_hidden_block = False
+    active_close_tag = ""
+    buffer = ""
+    for token in token_stream:
+        buffer += token
+        while True:
+            if not in_hidden_block:
+                # Find start tags
+                think_idx = buffer.find("<think>")
+                tool_idx = buffer.find("<tool_call>")
+                
+                # Determine which tag comes first
+                first_tag = None
+                first_idx = -1
+                
+                if think_idx != -1 and tool_idx != -1:
+                    if think_idx < tool_idx:
+                        first_tag = "think"
+                        first_idx = think_idx
+                    else:
+                        first_tag = "tool_call"
+                        first_idx = tool_idx
+                elif think_idx != -1:
+                    first_tag = "think"
+                    first_idx = think_idx
+                elif tool_idx != -1:
+                    first_tag = "tool_call"
+                    first_idx = tool_idx
+                    
+                if first_tag is not None:
+                    # Yield everything before the first tag
+                    yield_text = buffer[:first_idx]
+                    if yield_text:
+                        yield yield_text
+                    
+                    # Setup hidden mode
+                    if first_tag == "think":
+                        buffer = buffer[first_idx + len("<think>"):]
+                        active_close_tag = "</think>"
+                    else:
+                        buffer = buffer[first_idx + len("<tool_call>"):]
+                        active_close_tag = "</tool_call>"
+                    in_hidden_block = True
+                else:
+                    # Check for partial start tag prefixes at the end of the buffer
+                    # to prevent yielding them prematurely
+                    match_prefix = False
+                    prefix_len = 0
+                    
+                    # Suffix check for "<think>" (len 7) and "<tool_call>" (len 11)
+                    for i in range(1, 11):
+                        suffix = buffer[-i:]
+                        if "<think>".startswith(suffix) or "<tool_call>".startswith(suffix):
+                            match_prefix = True
+                            prefix_len = i
+                            break
+                            
+                    if match_prefix:
+                        yield_text = buffer[:-prefix_len]
+                        if yield_text:
+                            yield yield_text
+                        buffer = buffer[-prefix_len:]
+                        break
+                    else:
+                        yield buffer
+                        buffer = ""
+                        break
+            else:
+                # We are inside a hidden block. Look for the active close tag.
+                idx = buffer.find(active_close_tag)
+                if idx != -1:
+                    buffer = buffer[idx + len(active_close_tag):]
+                    in_hidden_block = False
+                    active_close_tag = ""
+                else:
+                    # Check for partial close tag prefix at the end of the buffer
+                    match_prefix = False
+                    prefix_len = 0
+                    
+                    # Suffix check for active_close_tag
+                    for i in range(1, len(active_close_tag)):
+                        suffix = buffer[-i:]
+                        if active_close_tag.startswith(suffix):
+                            match_prefix = True
+                            prefix_len = i
+                            break
+                            
+                    if match_prefix:
+                        buffer = buffer[-prefix_len:]
+                        break
+                    else:
+                        buffer = ""
+                        break
+    if not in_hidden_block and buffer:
+        yield buffer
 
 def parse_sentences(text_stream):
     """Yields clean sentences from a streaming text generator to enable sentence-level TTS streaming."""
@@ -506,14 +608,22 @@ async def websocket_endpoint(websocket: WebSocket):
                                     "content": tool_result
                                 })
                                 print(f"Tool execution complete. Result appended: {tool_result}")
-                            
                             # Since we executed tools, get the final response from LLM using streaming
-                            chat_completion = groq_client.chat.completions.create(
-                                messages=chat_history,
-                                model="llama-3.3-70b-versatile",
-                                temperature=0.7,
-                                stream=True
-                            )
+                            messages_to_send = chat_history.copy()
+                            if "qwen" in ACTIVE_MODEL or "deepseek" in ACTIVE_MODEL:
+                                messages_to_send.append({
+                                    "role": "system",
+                                    "content": "You have already executed the requested tools. Do not output any XML tags, HTML tags, or <tool_call> blocks. Just reply conversationally to the user about the results of the actions."
+                                })
+                            params = {
+                                "messages": messages_to_send,
+                                "model": ACTIVE_MODEL,
+                                "temperature": 0.7,
+                                "stream": True
+                            }
+                            if "qwen" in ACTIVE_MODEL or "deepseek" in ACTIVE_MODEL:
+                                params["reasoning_format"] = "hidden"
+                            chat_completion = groq_client.chat.completions.create(**params)
                             
                             def token_generator():
                                 for chunk in chat_completion:
@@ -521,13 +631,22 @@ async def websocket_endpoint(websocket: WebSocket):
                                     if token:
                                         yield token
                         else:
-                            # No tools called. Query llama-3.3-70b-versatile directly for the chat response
-                            chat_completion = groq_client.chat.completions.create(
-                                messages=chat_history,
-                                model="llama-3.3-70b-versatile",
-                                temperature=0.7,
-                                stream=True
-                            )
+                            # No tools called. Query active model directly for the chat response
+                            messages_to_send = chat_history.copy()
+                            if "qwen" in ACTIVE_MODEL or "deepseek" in ACTIVE_MODEL:
+                                messages_to_send.append({
+                                    "role": "system",
+                                    "content": "No tools were executed for this request. Do not attempt to call any tools or output any XML tags, HTML tags, or <tool_call> blocks. Simply reply conversationally explaining what you can or cannot do."
+                                })
+                            params = {
+                                "messages": messages_to_send,
+                                "model": ACTIVE_MODEL,
+                                "temperature": 0.7,
+                                "stream": True
+                            }
+                            if "qwen" in ACTIVE_MODEL or "deepseek" in ACTIVE_MODEL:
+                                params["reasoning_format"] = "hidden"
+                            chat_completion = groq_client.chat.completions.create(**params)
                             
                             def token_generator():
                                 for chunk in chat_completion:
@@ -538,7 +657,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     full_response = ""
                     
                     # 3. Sentence-level Streaming TTS Pipeline
-                    for sentence in parse_sentences(token_generator()):
+                    for sentence in parse_sentences(filter_thinking_tokens(token_generator())):
                         if not sentence.strip():
                             continue
                             
