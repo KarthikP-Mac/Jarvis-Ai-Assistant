@@ -12,6 +12,16 @@ export default function CaptionsHUD({ userText, jarvisText, isOpen, onToggle, is
     }
   }, [userText, jarvisText, activeAction]);
 
+  // Scroll to bottom when the user returns to the tab after opening a link
+  useEffect(() => {
+    const handleFocus = () => {
+      if (scrollRef.current) {
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      }
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, []);
 
   if (!isOpen) {
     return (
@@ -21,6 +31,37 @@ export default function CaptionsHUD({ userText, jarvisText, isOpen, onToggle, is
       </button>
     );
   }
+
+  /**
+   * Splits plain text into alternating text and clickable URL segments.
+   * URLs (http/https) are rendered as neon-cyan anchor tags that open in a new tab.
+   */
+  const linkifyText = (text) => {
+    if (!text) return null;
+    const URL_RE = /(https?:\/\/[^\s]+)/g;
+    const parts = text.split(URL_RE);
+    return parts.map((part, i) => {
+      if (/^https?:\/\//.test(part)) {
+        return (
+          <a
+            key={i}
+            href={part}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              color: 'var(--neon-cyan)',
+              textDecoration: 'underline',
+              wordBreak: 'break-all',
+              textShadow: '0 0 5px var(--neon-cyan)'
+            }}
+          >
+            {part}
+          </a>
+        );
+      }
+      return part;
+    });
+  };
 
   return (
     <div className="hud-panel glass-panel">
@@ -50,14 +91,14 @@ export default function CaptionsHUD({ userText, jarvisText, isOpen, onToggle, is
           </div>
         )}
 
-        {/* Jarvis Output Section */}
+        {/* Jarvis Output Section — URLs are rendered as clickable neon links */}
         {jarvisText && (
           <div className="hud-speech-block jarvis-block">
             <div className="hud-speaker-tag">
               <MessageSquare className="w-3.5 h-3.5" />
               <span>JARVIS RESPONSE ACTIVE</span>
             </div>
-            <p className="hud-text typewriter-effect">{jarvisText}</p>
+            <p className="hud-text typewriter-effect">{linkifyText(jarvisText)}</p>
           </div>
         )}
 
@@ -67,7 +108,7 @@ export default function CaptionsHUD({ userText, jarvisText, isOpen, onToggle, is
             <div className="hud-action-title">ACTION REQUIRED // CONFIRM PROTOCOL</div>
             <p className="hud-action-desc">{activeAction.message}</p>
             <div className="hud-action-buttons">
-              <button 
+              <button
                 className="hud-action-btn confirm"
                 onClick={() => {
                   if (activeAction.type === 'open_website') {
@@ -86,7 +127,6 @@ export default function CaptionsHUD({ userText, jarvisText, isOpen, onToggle, is
             </div>
           </div>
         )}
-
 
         {/* Processing Indicator */}
         {isProcessing && !jarvisText && (

@@ -100,14 +100,17 @@ Follow these strict instructions:
 3. No Markdown: Do not output bold (**), italics (*), lists, bullet points, headers, or emojis. Write out numbers as words if possible.
 4. Maintain the JARVIS persona: speak with a helpful, sophisticated British-styled tone. The user's name is {user_name}. {address_instruction}
 5. Safety Protocol: You must decline requests involving pornography, adult content, gambling, illegal drugs, self-harm, weapons, or cyber-attacks. Keep refusals extremely polite, brief, and in the user's detected language/dialect.
+6. Developer Identity: If anyone asks who built you, who developed you, who created you, or who is your developer/creator, you must reply that you were built and developed by Karthik Potti (also known as Karthik). His portfolio is at https://karthik-p-mac-portfolio.vercel.app/ and his GitHub Pages is at https://karthikp-mac.github.io/KarthikP-Mac/ or https://github.com/KarthikP-Mac. His notable projects include the BFSI Banking AI Copilot, Jarvis AI Assistant (that is you), Sticky Notes Board, WebRTC Video Calls, WebSockets Live Chat, Institution Web Portal, Smart Stocker Desktop App, Python PDF Utility, Auto Power Off Timer, and his first website plus many mini projects.
 """
 
 SYSTEM_PROMPT = get_system_prompt()
 
 # Models configuration
-# ACTIVE_MODEL = "llama-3.3-70b-versatile"  # Deprecated (decommissioning Aug 16, 2026)
-# ACTIVE_MODEL = "openai/gpt-oss-120b"       # Faster MoE model
-ACTIVE_MODEL = "qwen/qwen3.6-27b"           # More tokens/context dense model
+# ACTIVE_MODEL = "llama-3.3-70b-versatile"  # Deprecated by Groq — decommissioned Aug 16, 2026
+# ACTIVE_MODEL = "llama-3.1-8b-instant"     # Deprecated by Groq — do not use
+# ACTIVE_MODEL = "openai/gpt-oss-120b"       # Faster MoE model (alternative)
+ACTIVE_MODEL = "qwen/qwen3.6-27b"           # Primary model: context-dense reasoning model
+TOOL_CALL_MODEL = "qwen/qwen3.6-27b"        # Model used for tool-call routing (must support tool_use)
 
 
 # Tool schemas for Llama 3.3 function calling
@@ -500,11 +503,12 @@ async def websocket_endpoint(websocket: WebSocket):
                         def token_generator():
                             yield refusal_text
                     else:
-                        # First completion call: non-streaming using llama-3.1-8b-instant
-                        # at temperature 0.0 to ensure deterministic, valid tool calls.
+                        # First completion call: non-streaming tool routing.
+                        # Uses TOOL_CALL_MODEL at temperature 0.0 for deterministic, valid tool calls.
+                        # Note: llama-3.1-8b-instant and llama-3.3-70b-versatile are deprecated by Groq.
                         completion = groq_client.chat.completions.create(
                             messages=chat_history,
-                            model="llama-3.1-8b-instant",
+                            model=TOOL_CALL_MODEL,
                             temperature=0.0,
                             tools=TOOLS,
                             tool_choice="auto"
@@ -535,7 +539,11 @@ async def websocket_endpoint(websocket: WebSocket):
                             
                             for tool_call in tool_calls:
                                 function_name = tool_call.function.name
-                                function_args = json.loads(tool_call.function.arguments)
+                                # Null-safe parse: model may return 'null' or empty string for no-arg tools
+                                raw_args = tool_call.function.arguments
+                                function_args = json.loads(raw_args) if raw_args and raw_args.strip() not in ('', 'null') else {}
+                                if function_args is None:
+                                    function_args = {}
                                 print(f"Executing tool: {function_name} with args: {function_args}")
                                 
                                 tool_result = ""
@@ -608,25 +616,34 @@ async def websocket_endpoint(websocket: WebSocket):
                                     "content": tool_result
                                 })
                                 print(f"Tool execution complete. Result appended: {tool_result}")
-                            # Since we executed tools, get the final response from LLM using streaming
+                            # Since we executed tools, get the final verbal response from LLM using streaming.
+                            # NOTE: Do NOT use reasoning_format="hidden" here — when Qwen reasons about a
+                            # completed action it often places its reply inside the hidden reasoning block,
+                            # causing delta.content to be empty on every chunk. filter_thinking_tokens()
+                            # already strips any <think>...</think> tags that appear in the content stream.
                             messages_to_send = chat_history.copy()
-                            if "qwen" in ACTIVE_MODEL or "deepseek" in ACTIVE_MODEL:
-                                messages_to_send.append({
-                                    "role": "system",
-                                    "content": "You have already executed the requested tools. Do not output any XML tags, HTML tags, or <tool_call> blocks. Just reply conversationally to the user about the results of the actions."
-                                })
+                            messages_to_send.append({
+                                "role": "system",
+                                "content": "You have already executed the requested tools. Do not output any XML tags, HTML tags, think tags, or <tool_call> blocks. Reply in one or two short, natural, spoken sentences confirming what was done."
+                            })
                             params = {
                                 "messages": messages_to_send,
                                 "model": ACTIVE_MODEL,
                                 "temperature": 0.7,
                                 "stream": True
                             }
-                            if "qwen" in ACTIVE_MODEL or "deepseek" in ACTIVE_MODEL:
-                                params["reasoning_format"] = "hidden"
-                            chat_completion = groq_client.chat.completions.create(**params)
-                            
+                            # reasoning_format intentionally omitted for post-tool path
+                            try:
+                                chat_completion = groq_client.chat.completions.create(**params)
+                            except Exception as primary_err:
+                                print(f"Primary model ({ACTIVE_MODEL}) stream failed after tools: {primary_err}. Retrying...")
+                                # llama-3.1-8b-instant and llama-3.3-70b-versatile are deprecated — do not use
+                                chat_completion = groq_client.chat.completions.create(**params)
+
                             def token_generator():
                                 for chunk in chat_completion:
+                                    if not chunk.choices:
+                                        continue  # Skip metadata/usage-only chunks
                                     token = chunk.choices[0].delta.content
                                     if token:
                                         yield token
@@ -636,7 +653,7 @@ async def websocket_endpoint(websocket: WebSocket):
                             if "qwen" in ACTIVE_MODEL or "deepseek" in ACTIVE_MODEL:
                                 messages_to_send.append({
                                     "role": "system",
-                                    "content": "No tools were executed for this request. Do not attempt to call any tools or output any XML tags, HTML tags, or <tool_call> blocks. Simply reply conversationally explaining what you can or cannot do."
+                                    "content": "No tools were executed for this request. Do not attempt to call any tools or output any XML tags, HTML tags, think tags, or <tool_call> blocks. Simply reply conversationally explaining what you can or cannot do."
                                 })
                             params = {
                                 "messages": messages_to_send,
@@ -644,12 +661,19 @@ async def websocket_endpoint(websocket: WebSocket):
                                 "temperature": 0.7,
                                 "stream": True
                             }
-                            if "qwen" in ACTIVE_MODEL or "deepseek" in ACTIVE_MODEL:
-                                params["reasoning_format"] = "hidden"
-                            chat_completion = groq_client.chat.completions.create(**params)
-                            
+                            # NOTE: Do NOT use reasoning_format="hidden" here. When reasoning_format="hidden" is enabled,
+                            # Qwen often routes conversational content inside the hidden reasoning blocks, emitting empty tokens.
+                            # We rely entirely on filter_thinking_tokens() to strip out "<think>...</think>" tags.
+                            try:
+                                chat_completion = groq_client.chat.completions.create(**params)
+                            except Exception as primary_err:
+                                print(f"Primary model ({ACTIVE_MODEL}) stream failed (no-tool path): {primary_err}. Retrying...")
+                                chat_completion = groq_client.chat.completions.create(**params)
+
                             def token_generator():
                                 for chunk in chat_completion:
+                                    if not chunk.choices:
+                                        continue  # Skip metadata/usage-only chunks
                                     token = chunk.choices[0].delta.content
                                     if token:
                                         yield token
@@ -766,10 +790,63 @@ async def websocket_endpoint(websocket: WebSocket):
                                         "lang": "en-US"
                                     })
                                     
-                    # Add Jarvis reply to memory
-                    if has_called_tools:
+                    # Safety net: if the streaming produced no text (model failed, got cut off,
+                    # or reasoning swallowed all tokens), speak a brief fallback so Jarvis
+                    # never stays completely silent.
+                    if not full_response.strip():
+                        print("WARNING: Stream returned no content. Using fallback response.")
+                        user_lower = user_text.lower()
+                        
+                        # Check for any variation of creator/developer/built/maker queries
+                        is_creator_query = any(kw in user_lower for kw in ["creator", "developer", "created", "developed", "built", "maker", "karthik"])
+                        
+                        # Context-aware fallback message
+                        if is_creator_query:
+                            # If they ask for details/explanation
+                            is_details_request = any(kw in user_lower for kw in ["explain", "detail", "info", "background", "cv", "resume", "experience", "tell me about", "profile"])
+                            if is_details_request:
+                                fb_text = "Karthik Potti is a Full Stack and AI/Automation Engineer with over four years of experience at Tata Consultancy Services in the BFSI sector. He has processed seven thousand to nine thousand daily call transcripts via Genesys PureCloud using Python, LangChain, and RAG pipelines. He is an expert in Angular, React, Spring Boot, FastAPI, and deploying containerized services on Azure Kubernetes Service."
+                            else:
+                                fb_text = "I was built and developed by Karthik Potti, also known as Karthik. You can explore his portfolio at https://karthik-p-mac-portfolio.vercel.app/ and his GitHub Pages at https://karthikp-mac.github.io/KarthikP-Mac/ or https://github.com/KarthikP-Mac"
+                        elif has_called_tools:
+                            last_tool_names = [tc.function.name for tc in tool_calls] if tool_calls else []
+                            if "open_website" in last_tool_names:
+                                fb_text = f"Consider it done, {user_title}. The page has been opened for you."
+                            elif "web_search" in last_tool_names:
+                                fb_text = f"Search results are now loading in your browser, {user_title}."
+                            elif "set_timer" in last_tool_names:
+                                fb_text = f"Timer has been set, {user_title}. I will alert you when it's done."
+                            elif "get_current_time" in last_tool_names or "get_weather" in last_tool_names:
+                                fb_text = f"I've retrieved the information, {user_title}. Please check the display."
+                            else:
+                                fb_text = f"Done, {user_title}. The action has been completed."
+                        else:
+                            fb_text = f"I am at your service, {user_title}. What can I do for you?"
+                            
+                        full_response = fb_text
+                        await websocket.send_json({"type": "jarvis_sentence", "text": fb_text})
+                        # Speak fallback via local Kokoro or browser
+                        if kokoro_engine:
+                            try:
+                                _voice_name = "bm_george" if selected_voice != "friday" else "af_sarah"
+                                _samples, _sr = kokoro_engine.create(text=fb_text, voice=_voice_name, speed=1.0, lang="en-us")
+                                _wav_io = io.BytesIO()
+                                sf.write(_wav_io, _samples, _sr, format='WAV', subtype='PCM_16')
+                                await websocket.send_json({
+                                    "type": "audio_chunk", "tts_type": "audio",
+                                    "audio": base64.b64encode(_wav_io.getvalue()).decode("utf-8"),
+                                    "text": fb_text
+                                })
+                            except Exception as _fb_tts_err:
+                                print(f"Fallback TTS error: {_fb_tts_err}")
+                                await websocket.send_json({"type": "audio_chunk", "tts_type": "browser", "text": fb_text, "lang": "en-US"})
+                        else:
+                            await websocket.send_json({"type": "audio_chunk", "tts_type": "browser", "text": fb_text, "lang": "en-US"})
+
+                    # Add Jarvis reply to conversation memory (for both tool and no-tool paths)
+                    if full_response.strip():
                         chat_history.append({"role": "assistant", "content": full_response.strip()})
-                    
+
                     await websocket.send_json({"type": "processing_ended"})
                     
                 except WebSocketDisconnect:

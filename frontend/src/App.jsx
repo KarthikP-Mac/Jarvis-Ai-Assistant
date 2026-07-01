@@ -127,7 +127,24 @@ export default function App() {
       addLog('Jarvis speech sequence completed.', 'info');
     };
 
+    // When the user returns to this tab (e.g. after opening a suggested link),
+    // ensure the wake-word monitor is running and the HUD is open.
+    const handleWindowFocus = () => {
+      setHudOpen(true);
+      if (
+        wakeWordEnabledRef.current &&
+        !isListeningRef.current &&
+        !isProcessingRef.current &&
+        !isSpeakingRef.current &&
+        !speechRecognitionRef.current
+      ) {
+        setTimeout(() => startWakeWordRecognition(), 600);
+      }
+    };
+    window.addEventListener('focus', handleWindowFocus);
+
     return () => {
+      window.removeEventListener('focus', handleWindowFocus);
       if (wsRef.current) {
         wsRef.current.onclose = null;
         wsRef.current.close();
@@ -241,6 +258,8 @@ export default function App() {
           break;
 
         case 'action':
+          // Always force-open HUD so action confirmation card is always visible
+          setHudOpen(true);
           if (data.action === 'open_website') {
             addLog(`Executing Action: Opening ${data.site_name || 'website'}...`, 'info');
             setActiveAction({
