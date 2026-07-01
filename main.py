@@ -109,8 +109,10 @@ SYSTEM_PROMPT = get_system_prompt()
 # ACTIVE_MODEL = "llama-3.3-70b-versatile"  # Deprecated by Groq — decommissioned Aug 16, 2026
 # ACTIVE_MODEL = "llama-3.1-8b-instant"     # Deprecated by Groq — do not use
 # ACTIVE_MODEL = "openai/gpt-oss-120b"       # Faster MoE model (alternative)
-ACTIVE_MODEL = "qwen/qwen3.6-27b"           # Primary model: context-dense reasoning model
-TOOL_CALL_MODEL = "qwen/qwen3.6-27b"        # Model used for tool-call routing (must support tool_use)
+# ACTIVE_MODEL = "qwen/qwen3.6-27b"           # Primary model: context-dense reasoning model
+# TOOL_CALL_MODEL = "qwen/qwen3.6-27b"        # Model used for tool-call routing (must support tool_use)
+ACTIVE_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"           # Primary model: context-dense reasoning model
+TOOL_CALL_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"        # Model used for tool-call routing (must support tool_use)
 
 
 # Tool schemas for Llama 3.3 function calling

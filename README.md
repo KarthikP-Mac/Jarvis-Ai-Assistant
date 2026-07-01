@@ -46,7 +46,7 @@ graph TD
 - **Frontend UI:** React + Vite (Vanilla CSS, custom Orbitron + Share Tech Mono typography).
 - **Backend API Framework:** Python FastAPI (Uvicorn HTTP & Websockets).
 - **Speech-to-Text (STT):** Groq Cloud API using `whisper-large-v3-turbo`.
-- **Cognitive Engine (LLM):** Hybrid model routing using Groq Cloud API. It leverages `llama-3.1-8b-instant` for fast, deterministic tool calling, and `qwen/qwen3.6-27b` (with fallback support for `openai/gpt-oss-120b`) for high-context conversational responses.
+- **Cognitive Engine (LLM):** Hybrid model routing using Groq Cloud API. It leverages `llama-3.1-8b-instant` for fast, deterministic tool calling, and `qwen/qwen3.6-27b`or `meta-llama/llama-4-scout-17b-16e-instruct` (with fallback support for `openai/gpt-oss-120b`) for high-context conversational responses.
 - **Text-to-Speech (TTS):** 
   - **English:** Local, zero-cost `Kokoro-82M` (loaded via `kokoro-onnx` CPU engine in-container).
   - **Hindi & Telugu:** Native device `SpeechSynthesis` browser fallback (100% free, high quality, zero api lag).
